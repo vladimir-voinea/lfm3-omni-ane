@@ -60,6 +60,8 @@ huggingface-cli download LiquidAI/LFM3-Omni-2B --local-dir models/LFM3-Omni-2B
 python tools/build_model.py
 
 # 3. palettise to LUT6 (writes model-28k-lut6/, ~1.8 GB, 2x faster)
+#    use THIS build: the 3.7 GB fp16 set can exceed the memory available to load
+#    26 programs at once, and then make_state() fails even though every program is valid
 python tools/palettize_all.py
 
 # 4. talk to it

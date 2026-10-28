@@ -1041,33 +1041,23 @@ In-situ profile of one decode step (median of 10, LUT6):
 | 6 full-attention layers | 16.25 |
 | 5 sliding-attention layers | 3.78 |
 | final norm + **LM head** | **11.42** |
-## ROUND 32: published
+## ROUND 35: regression on the published state, and LUT6 is the default for a reason
 
-**GitHub** -- https://github.com/vladimir-voinea/lfm3-omni-ane (public): README with the
-measured tables and the limits, `tools/` (build, runtime, engine, server, vision, audio,
-codec, depth decoder, mel front end, palettisation), `probes/` (38 verification scripts)
-and `notes/STATE.md`. 1.2 MB.
+The runtime changed several times since the multimodal work (sessions, incremental masks,
+selectable head), so all the headline paths were re-run against the **published** build:
 
-**HuggingFace** -- https://huggingface.co/vladimir94/lfm3-omni-2b-ane-coreml: **86 files,
-1.97 GB**, LUT6 programs + embedding table + rope tables + layer map, with a model card
-that declares `base_model: LiquidAI/LFM3-Omni-2B` and states it is a **quantized
-conversion** (not a merge, not a fine-tune) under the LFM Open License v1.0.
-
-The card and the README carry the same limits as this log: 75k not usable, audio out not
-yet producing good speech, LM head on the CPU. Publishing the failures next to the wins
-is the point -- a reader who downloads this should not discover them by trying.
-
-Operationally: the token came from dgx3 (`~/.cache/huggingface/token`), was read into a
-600-mode temp file, used, and deleted. It was never printed.
-
-### What is left in the objective
-
-| clause | state |
+| path | result |
 |---|---|
-| multimodal in (image, audio) | **done, verified** |
-| multimodal out (speech) | halves exact; generation loop wrong |
-| engine + harness + server | **done, verified** |
-| disk managed | done; 8 GB free, model dirs are 3.7 + 1.8 GB |
-| 75k context | not usable (2 % per layer) |
-| >20-30 tok/s | **21.1-21.6 at short context**; less when the cache fills |
-| publishing | **done** |
+| image in, LUT6 | *"...a tranquil coastal scene at dusk..."* and **Beach** -- unchanged |
+| audio in, LUT6 | *"The capital of France is Paris."* twice -- exact |
+| text engine, LUT6 | Tokyo / Rome, 21.5 tok/s |
+
+One new operational fact: the **pre-palettisation directory (3.7 GB) now fails to bulk-load
+26 programs** -- `make_state()` raises `This model was not loaded with the Core ML
+Framework` -- while the LUT6 build (1.7 GB) loads and runs every path. Each fp16 program
+loads and makes its state fine *on its own*, so this is again a memory ceiling, not a
+corrupt file. The published model is the LUT6 build, which is what the README and the
+model card already point at, so nothing users download is affected.
+
+That is worth stating in the README explicitly: **use the palettised build**; the fp16 one
+is a conversion intermediate on this machine.
