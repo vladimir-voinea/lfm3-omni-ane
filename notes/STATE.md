@@ -1041,33 +1041,32 @@ In-situ profile of one decode step (median of 10, LUT6):
 | 6 full-attention layers | 16.25 |
 | 5 sliding-attention layers | 3.78 |
 | final norm + **LM head** | **11.42** |
-## ROUND 36: 75k measured against both walls -- it cannot be delivered here
+## ROUND 37: a real bug in the published server, and the cache-size ceiling
 
-A full-size tile (28,672 rows) built at **FLOAT32** to fix the 2 % accuracy problem:
+**Bug found by testing the shipped build.** A non-streaming `/v1/chat/completions` failed
+with `KeyError: 'prompt_tokens'`: the server read `result['prompt_tokens']` but
+`Engine.generate()` never returned that key -- it only existed in the per-token meta the
+streaming path yields. Streaming worked, so the bug only hit the simple case, which is the
+one most people try first. Fixed by carrying `prompt_tokens` through the stream meta into
+`generate()`; the server now answers correctly:
 
-| | fp16 tile | fp32 tile |
-|---|---|---|
-| placement | 66 ops on the engine | **71 on the CPU**, 4 on the engine |
-| dispatch | ~2.5 ms | **23.51 ms** |
-| per-layer accuracy | ~2 % | would be exact |
+`{'content': 'red, blue, green', 'usage': {'prompt_tokens': 17, 'completion_tokens': 7,
+'total_tokens': 24}}`
 
-75k needs three tiles across six full-attention layers: **18 dispatches**. At the fp32
-figure that is **423 ms of attention per token -- about 2 tok/s**, before any other work.
-At the fp16 figure it is ~45 ms (≈13 tok/s) but with ~2 % error per layer, which compounds
-across 24 layers into nonsense.
+and SSE streaming still emits chunk-by-chunk. Fix pushed.
 
-So 75k is blocked by two independent walls and no configuration escapes both:
+### A smaller full-attention cache does not buy speed
 
-* **fp16 tiles are too inaccurate** (the reason 75k is 'not usable' rather than 'slow'),
-* **fp32 tiles are too slow** (2 tok/s), because Core ML will not place an fp32 program on
-  the engine at all -- it hands the whole graph to the CPU.
+The 28,672-row attention program costs 2.55 ms per layer per token, and I suspected the
+state read dominated. Built the same layer at **8,192 rows** and measured:
 
-This is now a measured conclusion rather than a shrug, and it belongs next to the claim in
-the README. The shipping configuration stays at the exact single 28,672-token cache.
+| rows | dispatch |
+|---|---|
+| 28,672 | 2.548 ms |
+| 8,192 | **1.977 ms** |
 
-### What that means for the objective
-
-Two clauses are delivered (multimodal in, engine/harness/server), one is published, one is
-met at short context (>20 tok/s), one is a documented precision limit (speech out), and
-**75k is not reachable on this conversion** -- the evidence above is why, and it is worth
-more than repeating the attempt in a different shape.
+Only 22 % cheaper for 3.5x fewer rows, so attention is **projection-dominated**, not
+cache-read dominated. Shrinking the cache to chase 30 tok/s would buy ~3.4 ms of a 47 ms
+token (21.1 -> ~22.9 tok/s) and would cost a second program set plus promotion logic
+that replays the context. Not worth it: the remaining big cost is the 11.4 ms CPU LM head,
+and that needs a placement fix, not a cache change.
