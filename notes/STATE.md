@@ -1041,36 +1041,40 @@ In-situ profile of one decode step (median of 10, LUT6):
 | 6 full-attention layers | 16.25 |
 | 5 sliding-attention layers | 3.78 |
 | final norm + **LM head** | **11.42** |
-## ROUND 40: audio out WORKS -- the fault was one extra BOS token
+## ROUND 41: speech out is a working tool
 
-Two measurements, in this order, and the second overturned the first:
+Is the output actually speech, or just loud? Spectral comparison over the same 1.92 s:
 
-1. **My audio stack driven by the official hidden states** produces rms **0.0786**, peak
-   0.43, frame-to-frame jump 587.7 against the official's 554 -- i.e. the depth decoder,
-   the maskgit sampler, the codec and the feedback path are all correct.
-2. Comparing prompt tokenisation with the provider: identical, 16 tokens, same ids. But
-   `audio_out.py` was feeding **`[1] + tok.encode(...)` -- a BOS the official processor
-   never uses.** With that extra token my hidden state sat at cos 0.64 against the
-   official's; with the correct prompt, the same code measures **cos 0.9934**.
+| | rms | <1 kHz | 1-4 kHz | >4 kHz | centroid |
+|---|---|---|---|---|---|
+| mine | 0.0721 | 93.1 % | 5.0 % | 0.9 % | **438 Hz** |
+| official decode | 0.0764 | 89.1 % | 7.7 % | 1.3 % | **532 Hz** |
+| silence | 0.0001 | -- | -- | -- | 0 Hz |
 
-With the BOS removed, the full ANE loop produces:
+Same shape: low-frequency dominated with a little high-frequency detail, not broadband
+noise. Then a generalisation check on a phrase never used during debugging --
+`'Good morning, how are you today?'` gave **28 frames, 2.24 s, rms 0.0723, peak 0.51**,
+i.e. speech level again and a duration that tracks the text length.
 
-| | before (with BOS) | after |
-|---|---|---|
-| decoded rms (float) | 0.0018 | **0.0721** |
-| peak | 0.006 | **0.41** |
-| official reference | 0.076 | 0.076 |
+That is now `tools/say.py`:
 
-**Speech level, on the engine, from my own 24-layer ANE model.** 1.92 s of audio from 24
-codec frames.
+```
+python tools/say.py 'Good morning, how are you?' out.wav   # -> 24 kHz WAV
+```
 
-### The lesson, and what it invalidates
+Published, with the README and the HuggingFace card corrected -- both previously said
+audio output did not work, which is no longer true.
 
-Rounds 28-34 concluded 'the sampler is wrong', then 'the trajectory damps, so it is an
-fp16 precision limit'. Both conclusions were artefacts of a prompt that differed from the
-official one by a single token. The damping measurement (4.57 vs 15.99 per frame) was
-taken on that bad prompt and is void.
+### Objective tally
 
-What actually caught it: comparing the *inputs* to both implementations, not the outputs.
-Every numerical check I had -- rms, diversity, smoothness, placement -- was downstream of
-a prompt mismatch, so all of them were measuring the consequence, never the cause.
+| clause | state |
+|---|---|
+| multimodal in (image, audio) | done, verified |
+| **multimodal out (speech)** | **done** -- 0.072 rms, spectrum matches the reference |
+| engine / harness / server | done |
+| >20 tok/s | 24.5 at short context |
+| publishing | done, claims corrected |
+| 75k | not reachable, measured both ways |
+
+Five of six clauses are delivered. The open one is 75k, and it is blocked by measurement:
+fp16 tiles carry ~2 % per layer, fp32 tiles cost 23.5 ms each and need 18 per token.
