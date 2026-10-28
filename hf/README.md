@@ -58,7 +58,8 @@ LFM3_ANE=$PWD/model-28k-lut6 python lfm3-omni-ane/tools/lfm3_serve.py
 
 * **75k context is not usable**: the tiled-attention mechanism runs but carries ~2 % error
   per layer, which compounds. Use the 28,672-token configuration.
-* **Audio output does not produce good speech yet** — the depth decoder and codec are
-  numerically exact but the generation loop yields quiet frames.
+* **Audio output works.** The depth decoder, sampler and codec are numerically exact
+  (rms and spectrum checked against the reference decode over 24 frames); the loop runs on
+  the engine and produces speech-level audio.
 * The LM head runs on the CPU (11.4 ms/token); Core ML will not place a 128,000-way matmul
   on the engine whole.

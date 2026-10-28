@@ -16,7 +16,7 @@ small Python runtime.
 | audio input | **working** | encoder matches at **cos 1.0**; transcribes real speech exactly |
 | audio output — depth decoder | **exact** | logits cos 1.0, codes 36/36 |
 | audio output — codec | **exact** | waveform relative error **0.0**, correlation 1.0 |
-| audio output — generation loop | **runs, wrong** | produces quiet audio; sampler under diagnosis |
+| audio output — generation loop | **working** | speech level: rms 0.072, spectrum matches the reference (centroid 438 Hz vs 532 Hz) |
 | engine: sessions, prefix cache, sampling | **working** | 2nd turn re-feeds 14 of 18 tokens, first token 0.92 -> 0.70 s |
 | server: OpenAI-compatible, streaming | **working** | `/v1/chat/completions`, incremental SSE, `[DONE]` |
 | palettisation (LUT6) | **working** | 16.3 -> 21.1 tok/s, same answers |

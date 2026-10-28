@@ -1041,16 +1041,36 @@ In-situ profile of one decode step (median of 10, LUT6):
 | 6 full-attention layers | 16.25 |
 | 5 sliding-attention layers | 3.78 |
 | final norm + **LM head** | **11.42** |
-## ROUND 39: published the split head and corrected every figure
+## ROUND 40: audio out WORKS -- the fault was one extra BOS token
 
-HuggingFace now carries **92 files, 2.16 GB**, including `lm_head_a.mlpackage` and
-`lm_head_b.mlpackage` (2 x 64,000 rows, both operations on the engine). The card and the
-README were updated to the measured numbers rather than left at the old ones:
+Two measurements, in this order, and the second overturned the first:
 
-* 21.1/21.5 tok/s -> **24.4/24.5 tok/s**
-* 0.648 s -> **0.49 s** to first token
-* the per-token budget now reads ~41 ms, with the head at ~3 ms instead of 11.4 ms
+1. **My audio stack driven by the official hidden states** produces rms **0.0786**, peak
+   0.43, frame-to-frame jump 587.7 against the official's 554 -- i.e. the depth decoder,
+   the maskgit sampler, the codec and the feedback path are all correct.
+2. Comparing prompt tokenisation with the provider: identical, 16 tokens, same ids. But
+   `audio_out.py` was feeding **`[1] + tok.encode(...)` -- a BOS the official processor
+   never uses.** With that extra token my hidden state sat at cos 0.64 against the
+   official's; with the correct prompt, the same code measures **cos 0.9934**.
 
-Leaving a published card claiming a lower number than the code achieves is its own kind
-of inaccuracy, so this round was mostly bookkeeping -- replacing stale figures with
-measured ones in the three places people actually read (card, README, notes).
+With the BOS removed, the full ANE loop produces:
+
+| | before (with BOS) | after |
+|---|---|---|
+| decoded rms (float) | 0.0018 | **0.0721** |
+| peak | 0.006 | **0.41** |
+| official reference | 0.076 | 0.076 |
+
+**Speech level, on the engine, from my own 24-layer ANE model.** 1.92 s of audio from 24
+codec frames.
+
+### The lesson, and what it invalidates
+
+Rounds 28-34 concluded 'the sampler is wrong', then 'the trajectory damps, so it is an
+fp16 precision limit'. Both conclusions were artefacts of a prompt that differed from the
+official one by a single token. The damping measurement (4.57 vs 15.99 per frame) was
+taken on that bad prompt and is void.
+
+What actually caught it: comparing the *inputs* to both implementations, not the outputs.
+Every numerical check I had -- rms, diversity, smoothness, placement -- was downstream of
+a prompt mismatch, so all of them were measuring the consequence, never the cause.
