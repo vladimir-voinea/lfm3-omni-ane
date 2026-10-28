@@ -1041,25 +1041,25 @@ In-situ profile of one decode step (median of 10, LUT6):
 | 6 full-attention layers | 16.25 |
 | 5 sliding-attention layers | 3.78 |
 | final norm + **LM head** | **11.42** |
-## ROUND 60: prefill batching attempted, stopped before it cost the disk
+## ROUND 61: the batched build stalls at conversion, twice
 
-Wrote `tools/build_batched.py` -- the same blocks with the position axis generalised from 1
-to **T=32**, so prefill feeds 32 tokens per dispatch instead of one. The conv block needed no
-change at all (its history concatenation is already sequence-agnostic); the attention block
-needed T-shaped views, a T-row cache write, a `(1, NKV, T, rows)` mask and `(T, D)` rotation
-tables.
+Patched the builder to palettise each layer immediately (so only ~48 MB per layer is kept
+instead of a 3.7 GB fp16 set) -- that removes the disk objection, not the stall.
 
-It did not get past the first layer: conversion sat for 15+ minutes at 0 % CPU while free
-disk fell from 8.3 GB to **4.2 GB**. Killed it, removed the partial build, cleaned the
-compile caches -- the engine still answers correctly afterwards.
+Then probed a single layer: loading its tensors and `torch.jit.trace` at `(1, 2048, 32, 1)`
+did not finish inside 10 minutes, at 62 % free memory. Killed it. The conversion path for the
+wider shapes is stuck before it reaches Core ML at all, so this is a tracing/model problem,
+not ANE placement.
 
-Two things I am not going to pretend about:
+Free disk also fell to **3.4 GB** during the attempt, which is its own reason not to keep
+retrying blindly.
 
-* the conversion path for the larger shapes is not working yet (no error, just no progress),
-* there is **not enough free space** for a second full program set anyway: the source weights
-  are 4.2 GB, the shipped build 2.0 GB, and the remaining 4.3 GB of the HuggingFace cache
-  belongs to another model on this machine, not to me.
+### What I would try next, narrowly
 
-So prefill stays token-serial at ~35 tok/s. It matters less than it sounds for chat: the
-prefix cache means only *new* tokens are prefilled, so the two-minute worst case is the first
-turn of a very long prompt, not every turn.
+`T=8` instead of 32: the mask shrinks from 4x32x28,672 to 4x8x28,672 (58 MB -> 1.8 MB of
+input), and if the stall is the traced slice `cache[..., pos:pos+T, :]` growing, a smaller T
+will show it quickly. If T=8 traces in seconds, the batched path is alive and the question
+becomes picking the largest T that converts.
+
+Until then, prefill stays token-serial (~35 tok/s) and every other path is unaffected: engine
+26.9 cold / 31.2 warm tok/s, Tokyo/Rome after the abort.
