@@ -12,7 +12,7 @@ small Python runtime.
 | part | state | evidence |
 |---|---|---|
 | text model (24 layers) on the ANE | **working** | answers correctly; 28,672-token cache |
-| image input | **working** | vision tower matches the reference at **cos 1.0**; correct captions on a real photo |
+| image input | **working, incl. HTTP** | vision tower matches the reference at **cos 1.0**; over the API, a red image answers "Red" and a green one "Green" |
 | audio input | **working** | encoder matches at **cos 1.0**; transcribes real speech exactly |
 | audio output — depth decoder | **exact** | logits cos 1.0, codes 36/36 |
 | audio output — codec | **exact** | waveform relative error **0.0**, correlation 1.0 |
@@ -83,6 +83,10 @@ python tools/say.py 'Good morning, how are you?' out.wav   # speech out (24 kHz)
 # a second copy in the same process (or a child) fails make_state() on this machine, so
 # /v1/audio/speech answers 501 with this instruction rather than pretending
 ```
+
+Image input goes over HTTP as an OpenAI-style content part with a `data:` PNG
+(`{"type": "image_url", "image_url": {"url": "data:image/png;base64,..."}}`); the server
+decodes PNG itself, so it needs no Pillow.
 
 Requires an Apple-silicon Mac, `coremltools` (tested 8.x), and a Python with
 `tokenizers` and `safetensors`. Building the programs takes about 20 minutes.

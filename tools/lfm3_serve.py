@@ -150,7 +150,8 @@ class Handler(BaseHTTPRequestHandler):
                                 repetition_penalty=float(request.get('repetition_penalty', 1.0) or 1.0))
 
         if not stream:
-            result = engine().generate(messages, params, max_tokens=max_tokens)
+            result = engine().generate(messages, params, max_tokens=max_tokens,
+                                        image_rows=image_rows)
             return self._json({
                 'id': 'chatcmpl-lfm3', 'object': 'chat.completion', 'model': MODEL_ID,
                 'choices': [{'index': 0, 'finish_reason': 'stop',

@@ -115,11 +115,11 @@ class Engine:
                                             len(pending), len(prompt_tokens)):
                 yield token, info
 
-    def generate(self, messages, params: SamplingParams, max_tokens: int = 256):
+    def generate(self, messages, params: SamplingParams, max_tokens: int = 256, image_rows=None):
         produced = []
         meta = {}
         started = time.perf_counter()
-        for token, info in self.stream(messages, params, max_tokens):
+        for token, info in self.stream(messages, params, max_tokens, image_rows=image_rows):
             produced.append(token)
             meta.update(info)
         elapsed = time.perf_counter() - started

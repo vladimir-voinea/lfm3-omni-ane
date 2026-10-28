@@ -1041,36 +1041,21 @@ In-situ profile of one decode step (median of 10, LUT6):
 | 6 full-attention layers | 16.25 |
 | 5 sliding-attention layers | 3.78 |
 | final norm + **LM head** | **11.42** |
-## ROUND 43: disk cleanup (user-reported full disk) and the image-over-API work
+## ROUND 44: image over HTTP, and the bug that kept it grey
 
-### Disk: the culprit was not the project
+The 'Gray' answer had a mundane cause: the server has two paths, and only the streaming
+one forwarded `image_rows`. The non-streaming path called `Engine.generate(...)`, which
+did not even accept the argument, so the `<|image|>` placeholder was fed to the model with
+**no vectors** -- the model saw an empty slot and answered for a blank image.
 
-`/private/var/folders/.../T` held **43 GB** of Core ML artefacts -- 1,038 compiled
-`*.mlmodelc` caches, one per program load over these weeks, plus conversion scratch. They
-are caches: Core ML recompiles on demand.
+Bisecting found it in one step: reproducing the server's parsing in a plain script gave
+**'Red'**, so the parse and the vision path were fine and the difference had to be in the
+hand-off. `generate()` now takes and forwards `image_rows`, and the API answers:
 
-| action | freed |
-|---|---|
-| deleted `*.mlmodelc` caches in the system temp dir (1,038 dirs) | **7 GB** |
-| deleted /tmp scratch: refenv, codecpkg, every test .mlpackage, .npy, .wav | ~2.6 GB |
-| deleted the duplicate fp16 build `model-28k` (the shipped artefact is LUT6) | **3.7 GB** |
-| deleted the pip cache | 0.7 GB |
+| image | answer |
+| --- | --- |
+| red 224x224 | **Red** |
+| green 224x224 | **Green** |
 
-Free space went **12 GB -> 28 GB**, and the system temp dir from 43 GB to **814 MB**.
-Verified afterwards: the engine still answers Tokyo/Rome at **24.6/25.0 tok/s**, so no
-cache I removed was needed.
-
-Tools that defaulted to the deleted fp16 build now default to `model-28k-lut6`;
-`build_model.py` and `palettize_all.py` still write `model-28k` because that is the
-intermediate they produce.
-
-### Image over the API
-
-Built and verified in pieces: a dependency-free PNG codec (round-trips exactly), a vision
-helper whose output matches the reference path at **cos 1.0** (49 rows), and an engine
-branch that splices image vectors at the `<|image|>` placeholder. The engine path answers
-**'Red'** for a red 224x224 image with the correct prompt.
-
-Not yet verified end to end through HTTP: my first API attempts returned 'Gray' for both
-a red and a green image, and I have not yet found why the server path differs from the
-engine path that works. Until that is resolved, image input over HTTP is unproven.
+So both directions of multimodal now work over HTTP: image/audio in, speech out (speech
+as a CLI path for the memory reason recorded in round 42).
