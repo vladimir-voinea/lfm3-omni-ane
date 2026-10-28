@@ -8,6 +8,12 @@ import os
 import numpy as np
 import coremltools as ct
 
+# Keep Core ML's compiled caches on disk, not in the RAM-backed temp directory: each
+# program load writes an .mlmodelc that would otherwise sit in memory.
+_CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'disk-tmp')
+os.makedirs(_CACHE_DIR, exist_ok=True)
+os.environ['TMPDIR'] = _CACHE_DIR
+
 D, H, NKV = 128, 2048, 4
 
 

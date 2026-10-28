@@ -57,8 +57,8 @@ if __name__ == '__main__':
         for k in f.keys():
             if 'vision_tower' in k or 'multi_modal_projector' in k:
                 w[k] = f.get_tensor(k).float()
-    layer_types = json.load(open('/Users/vladimir/dev/lfm3-ane/models/LFM3-Omni-2B/config.json'))['vision_config']['layer_types']
-    tok = Tokenizer.from_file('/Users/vladimir/dev/lfm3-ane/models/LFM3-Omni-2B/tokenizer.json')
+    layer_types = json.load(open('/Users/vladimir/dev/lfm3-ane/model-28k-lut6/config.json'))['vision_config']['layer_types']
+    tok = Tokenizer.from_file('/Users/vladimir/dev/lfm3-ane/model-28k-lut6/tokenizer.json')
     for path, question in (('/tmp/beach.npy', 'Describe this image in one sentence.'),
                            ('/tmp/tree.npy', 'Is this a photo of a tree or a beach? One word.')):
         answer, shape = ask(w, layer_types, tok, question, path)

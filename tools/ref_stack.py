@@ -9,7 +9,7 @@ import torch
 from safetensors import safe_open
 
 P = '/Users/vladimir/dev/lfm3-ane/models/LFM3-Omni-2B/model.safetensors'
-CFG = '/Users/vladimir/dev/lfm3-ane/models/LFM3-Omni-2B/config.json'
+CFG = '/Users/vladimir/dev/lfm3-ane/model-28k-lut6/config.json'
 H, D, NH, NKV, K = 2048, 128, 16, 4, 7
 EPS = 1e-5
 

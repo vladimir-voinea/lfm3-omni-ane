@@ -16,7 +16,13 @@ import depth_ref
 from audio_out import sample_codes
 from lfm3_runtime import Runtime
 
-MODEL = '/Users/vladimir/dev/lfm3-ane/models/LFM3-Omni-2B'
+# Keep Core ML's compiled caches on disk, not in the RAM-backed temp directory: each
+# program load writes an .mlmodelc that would otherwise sit in memory.
+_CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'disk-tmp')
+os.makedirs(_CACHE_DIR, exist_ok=True)
+os.environ['TMPDIR'] = _CACHE_DIR
+
+MODEL = '/Users/vladimir/dev/lfm3-ane/model-28k-lut6'
 ANE = os.environ.get('LFM3_ANE', '/Users/vladimir/dev/lfm3-ane/model-28k-lut6')
 AUDIO_START = 125012
 EOS_AUDIO = 2016

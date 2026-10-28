@@ -20,7 +20,7 @@ with safe_open(P, framework='pt') as f:
     for k in f.keys():
         if 'vision_tower' in k or 'multi_modal_projector' in k:
             w[k] = f.get_tensor(k).float()
-types = json.load(open('/Users/vladimir/dev/lfm3-ane/models/LFM3-Omni-2B/config.json'))['vision_config']['layer_types']
+types = json.load(open('/Users/vladimir/dev/lfm3-ane/model-28k-lut6/config.json'))['vision_config']['layer_types']
 
 data = np.load('/tmp/official_inputs.npz')
 pixels = torch.from_numpy(data['pixel_values']).float()
@@ -34,7 +34,7 @@ del w
 import gc
 gc.collect()
 
-tok = Tokenizer.from_file('/Users/vladimir/dev/lfm3-ane/models/LFM3-Omni-2B/tokenizer.json')
+tok = Tokenizer.from_file('/Users/vladimir/dev/lfm3-ane/model-28k-lut6/tokenizer.json')
 runtime = Runtime(ANE)
 
 for question in ('Describe this image in one sentence.', 'Is this a beach or a forest? One word.'):

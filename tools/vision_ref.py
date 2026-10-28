@@ -118,7 +118,7 @@ if __name__ == '__main__':
         for k in f.keys():
             if 'vision_tower' in k or 'multi_modal_projector' in k:
                 w[k] = f.get_tensor(k).float()
-    types = json.load(open('/Users/vladimir/dev/lfm3-ane/models/LFM3-Omni-2B/config.json'))
+    types = json.load(open('/Users/vladimir/dev/lfm3-ane/model-28k-lut6/config.json'))
     layer_types = types['vision_config']['layer_types']
     torch.manual_seed(0)
     h, wd = 16, 16                       # 256 patches, 64 after merge

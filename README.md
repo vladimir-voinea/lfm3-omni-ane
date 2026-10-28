@@ -109,6 +109,38 @@ Two measurement traps are recorded in `notes/STATE.md` because they cost real ti
 cosine of 0.998 can hide codes that disagree 39 % of the time (argmax agreement is the metric
 for a sampler), and repeating a single audio frame is not a valid loudness test.
 
+## Restoring this checkout
+
+Everything needed is in two places, so deleting the local copy loses nothing:
+
+```bash
+# the converted model (2.0 GB, 92 files)
+huggingface-cli download vladimir94/lfm3-omni-2b-ane-coreml --local-dir model-28k-lut6
+
+# this repository (code, probes, notes)
+git clone https://github.com/vladimir-voinea/lfm3-omni-ane
+```
+
+The 4.3 GB source model is **not** needed to run anything here; only `tokenizer.json`,
+`config.json` and `generation_config.json` are, and those three copies live inside the
+downloaded model directory. Re-download the source only to rebuild the programs:
+
+```bash
+huggingface-cli download LiquidAI/LFM3-Omni-2B --local-dir models/LFM3-Omni-2B
+```
+
+### Where Core ML puts its caches
+
+Each program load compiles an `.mlmodelc`. They land under the user temp directory
+(`/var/folders/.../T`), which on macOS is **the data volume, not a RAM disk** (`df` confirms
+`/dev/disk3s5`). A few hundred loads is tens of gigabytes, so:
+
+```bash
+sh tools/clean_caches.sh     # deletes only *.mlmodelc and *.mlpackage from temp
+```
+
+The runtime also sets `TMPDIR` to `disk-tmp/` inside the project before loading anything.
+
 ## Limits, stated plainly
 
 * **75k context is not reachable.** Measured both ways: fp16 tiles cost ~2 % per layer

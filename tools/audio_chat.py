@@ -42,7 +42,7 @@ del w
 import gc
 gc.collect()
 
-tok = Tokenizer.from_file('/Users/vladimir/dev/lfm3-ane/models/LFM3-Omni-2B/tokenizer.json')
+tok = Tokenizer.from_file('/Users/vladimir/dev/lfm3-ane/model-28k-lut6/tokenizer.json')
 runtime = Runtime(ANE)
 
 for question in ('Transcribe the audio.', 'What did the speaker say?'):

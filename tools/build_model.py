@@ -183,7 +183,7 @@ if __name__ == '__main__':
         keys = [k for k in f.keys() if k.startswith('model.language_model')]
         emb = f.get_tensor('model.language_model.embed_tokens.weight').to(torch.float32)
         final_w = f.get_tensor('model.language_model.embedding_norm.weight').to(torch.float32)
-        types = json.load(open('/Users/vladimir/dev/lfm3-ane/models/LFM3-Omni-2B/config.json'))
+        types = json.load(open('/Users/vladimir/dev/lfm3-ane/model-28k-lut6/config.json'))
         layer_types = types['text_config']['layer_types']
         for i, kind in enumerate(layer_types):
             t = {k.split('layers.%d.' % i)[1]: f.get_tensor(k).to(torch.float32)

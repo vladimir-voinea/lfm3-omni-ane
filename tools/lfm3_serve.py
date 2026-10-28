@@ -16,6 +16,12 @@ from anemll.runtime.dory_sampling import SamplingParams  # noqa: E402
 
 from lfm3_engine import Engine  # noqa: E402
 
+# Keep Core ML's compiled caches on disk, not in the RAM-backed temp directory: each
+# program load writes an .mlmodelc that would otherwise sit in memory.
+_CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'disk-tmp')
+os.makedirs(_CACHE_DIR, exist_ok=True)
+os.environ['TMPDIR'] = _CACHE_DIR
+
 MODEL_ID = 'lfm3-omni-2b-ane'
 ENGINE = None
 ENGINE_LOCK = threading.Lock()
@@ -127,10 +133,11 @@ class Handler(BaseHTTPRequestHandler):
 
         messages = request.get('messages') or []
         image_rows = None
+        audio_rows = None
         for message in messages:
             content = message.get('content')
             if isinstance(content, list):
-                text_parts, images = [], []
+                text_parts, images, sounds = [], [], []
                 for part in content:
                     if part.get('type') == 'text':
                         text_parts.append(part.get('text') or '')
@@ -138,10 +145,20 @@ class Handler(BaseHTTPRequestHandler):
                         url = (part.get('image_url') or {}).get('url') or ''
                         if url.startswith('data:'):
                             images.append(url)
+                    elif part.get('type') == 'input_audio':
+                        sound = part.get('input_audio') or {}
+                        data = sound.get('data') or ''
+                        if data:
+                            sounds.append(data)
                 if images:
                     from lfm3_vision_api import rows_from_data_uri
                     image_rows = rows_from_data_uri(images[0])
                     message['content'] = ('<|vision_start|><|image|><|vision_end|>'
+                                          + ' '.join(text_parts))
+                elif sounds:
+                    from lfm3_audio_api import rows_from_base64
+                    audio_rows = rows_from_base64(sounds[0])
+                    message['content'] = ('<|audio_start|><|audio|><|audio_end|>'
                                           + ' '.join(text_parts))
         stream = bool(request.get('stream'))
         max_tokens = int(request.get('max_tokens') or 256)
@@ -151,7 +168,7 @@ class Handler(BaseHTTPRequestHandler):
 
         if not stream:
             result = engine().generate(messages, params, max_tokens=max_tokens,
-                                        image_rows=image_rows)
+                                        image_rows=image_rows, audio_rows=audio_rows)
             return self._json({
                 'id': 'chatcmpl-lfm3', 'object': 'chat.completion', 'model': MODEL_ID,
                 'choices': [{'index': 0, 'finish_reason': 'stop',
@@ -175,7 +192,7 @@ class Handler(BaseHTTPRequestHandler):
             meta = {}
             chunk_delay = 0.0
             for token, info in engine().stream(messages, params, max_tokens=max_tokens,
-                                               image_rows=image_rows):
+                                               image_rows=image_rows, audio_rows=audio_rows):
                 meta.update(info)
                 produced.append(token)
                 piece = engine().tokenizer.decode([token])

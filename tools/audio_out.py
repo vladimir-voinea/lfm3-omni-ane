@@ -54,7 +54,7 @@ def sample_codes(hidden, w, history=None, schedule=(4, 4, 4), temperature=0.4, p
 
 
 def main():
-    tok = Tokenizer.from_file('/Users/vladimir/dev/lfm3-ane/models/LFM3-Omni-2B/tokenizer.json')
+    tok = Tokenizer.from_file('/Users/vladimir/dev/lfm3-ane/model-28k-lut6/tokenizer.json')
     head = '<|im_start|>user\nSay hello in a friendly voice.<|im_end|>\n<|im_start|>assistant\n<|audio_start|>'
     # no BOS: the official processor feeds the template tokens alone, and an extra BOS
     # changes the hidden state enough to wreck the speech (cos 0.64 instead of 0.99)

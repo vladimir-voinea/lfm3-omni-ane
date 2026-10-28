@@ -44,9 +44,9 @@ def main():
             if 'vision_tower' in k or 'multi_modal_projector' in k:
                 w[k] = f.get_tensor(k).float()
     import json
-    layer_types = json.load(open('/Users/vladimir/dev/lfm3-ane/models/LFM3-Omni-2B/config.json'))['vision_config']['layer_types']
+    layer_types = json.load(open('/Users/vladimir/dev/lfm3-ane/model-28k-lut6/config.json'))['vision_config']['layer_types']
 
-    tok = Tokenizer.from_file('/Users/vladimir/dev/lfm3-ane/models/LFM3-Omni-2B/tokenizer.json')
+    tok = Tokenizer.from_file('/Users/vladimir/dev/lfm3-ane/model-28k-lut6/tokenizer.json')
     question = 'What colour fills this image? Answer with one word.'
     head = ('<|im_start|>user\n<|vision_start|><|image|><|vision_end|>%s<|im_end|>\n'
             '<|im_start|>assistant\n') % question

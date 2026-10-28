@@ -15,9 +15,10 @@ from anemll.runtime.dory_sampling import Sampler, SamplingParams  # noqa: E402
 
 from lfm3_runtime import Runtime  # noqa: E402
 
-MODEL_DIR = os.environ.get('LFM3_MODEL', '/Users/vladimir/dev/lfm3-ane/models/LFM3-Omni-2B')
+MODEL_DIR = os.environ.get('LFM3_MODEL', '/Users/vladimir/dev/lfm3-ane/model-28k-lut6')
 ANE_DIR = os.environ.get('LFM3_ANE', '/Users/vladimir/dev/lfm3-ane/model-28k-lut6')
 IMAGE_TOKEN = 125030
+AUDIO_TOKEN = 125031
 IM_END = 124900
 
 
@@ -80,30 +81,38 @@ class Engine:
                           'decode_start': decode_start}
             logits = self.runtime.step(tracked.session, [token])
 
-    def stream(self, messages, params: SamplingParams, max_tokens: int = 256, image_rows=None):
+    def _stream_spliced(self, tracked, rows, placeholder, params, max_tokens, prompt_tokens):
+        """Feed vectors into the residual stream where a placeholder token sits."""
+        session = tracked.session
+        at = prompt_tokens.index(placeholder)
+        self.runtime.step(session, prompt_tokens[:at])
+        logits = None
+        for row in rows:
+            logits = self.runtime.step_hidden(session, row)
+        session.tokens.extend(prompt_tokens[:at + 1])
+        started = time.perf_counter()
+        pending = prompt_tokens[at + 1:]
+        if pending:
+            logits = self.runtime.step(session, pending)
+        session.tokens.extend(pending)
+        first = time.perf_counter() - started
+        for token, info in self._decode(tracked, logits, params, max_tokens, first, False,
+                                        len(pending), len(prompt_tokens)):
+            yield token, info
+
+    def stream(self, messages, params: SamplingParams, max_tokens: int = 256,
+               image_rows=None, audio_rows=None):
         prompt = render_chat(messages)
         prompt_tokens = [1] + self.tokenizer.encode(prompt).ids
         with self.lock:
-            if image_rows:
-                # an image cannot be reused by token prefix, so it starts a fresh session
-                # and the picture's vectors go straight into the residual stream where the
-                # <|image|> placeholder sits
+            if image_rows or audio_rows:
+                # media cannot be reused by token prefix, so it always starts a session and
+                # its vectors go into the residual stream where the placeholder sits
                 tracked = Tracked(self.runtime.new_session())
-                session = tracked.session
-                at = prompt_tokens.index(IMAGE_TOKEN)
-                self.runtime.step(session, prompt_tokens[:at])
-                logits = None
-                for row in image_rows:
-                    logits = self.runtime.step_hidden(session, row)
-                session.tokens.extend(prompt_tokens[:at + 1])
-                started = time.perf_counter()
-                pending = prompt_tokens[at + 1:]
-                if pending:
-                    logits = self.runtime.step(session, pending)
-                session.tokens.extend(pending)
-                first = time.perf_counter() - started
-                for token, info in self._decode(tracked, logits, params, max_tokens, first,
-                                                False, len(pending), len(prompt_tokens)):
+                rows, placeholder = ((image_rows, IMAGE_TOKEN) if image_rows
+                                     else (audio_rows, AUDIO_TOKEN))
+                for token, info in self._stream_spliced(tracked, rows, placeholder, params,
+                                                        max_tokens, prompt_tokens):
                     yield token, info
                 return
             tracked, pending, reused = self._session_for(prompt_tokens)
@@ -115,11 +124,13 @@ class Engine:
                                             len(pending), len(prompt_tokens)):
                 yield token, info
 
-    def generate(self, messages, params: SamplingParams, max_tokens: int = 256, image_rows=None):
+    def generate(self, messages, params: SamplingParams, max_tokens: int = 256,
+                 image_rows=None, audio_rows=None):
         produced = []
         meta = {}
         started = time.perf_counter()
-        for token, info in self.stream(messages, params, max_tokens, image_rows=image_rows):
+        for token, info in self.stream(messages, params, max_tokens,
+                                       image_rows=image_rows, audio_rows=audio_rows):
             produced.append(token)
             meta.update(info)
         elapsed = time.perf_counter() - started
