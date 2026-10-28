@@ -19,15 +19,21 @@ small Python runtime.
 | audio output — generation loop | **runs, wrong** | produces quiet audio; sampler under diagnosis |
 | engine: sessions, prefix cache, sampling | **working** | 2nd turn re-feeds 14 of 18 tokens, first token 0.92 -> 0.70 s |
 | server: OpenAI-compatible, streaming | **working** | `/v1/chat/completions`, incremental SSE, `[DONE]` |
-| palettisation (LUT6) | **working** | 16.3 -> **21.1 tok/s**, same answers |
+| palettisation (LUT6) | **working** | 16.3 -> 21.1 tok/s, same answers |
+| LM head split 2 x 64,000 | **working** | 21.1 -> **24.5 tok/s**, both ops on the engine |
 | 75k context | **not usable** | mechanism works, 2.1 % per-layer error |
 
 Speed, measured on an M-series Mac with the model palettised and a short context:
 
-* **21.1 tok/s** cold decode, **21.5 tok/s** with the prefix cache hit
-* 0.648 s to first token
-* one token costs ~46 ms: 14.8 ms in 13 conv layers, 20.0 ms in 11 attention layers,
-  11.4 ms in the LM head (which Core ML keeps on the CPU), ~0.02 ms reading the embedding
+* **24.4 tok/s** cold decode, **24.5 tok/s** with the prefix cache hit
+* 0.49 s to first token
+* one token costs ~41 ms: 14.8 ms in 13 conv layers, 20.0 ms in 11 attention layers,
+  ~3 ms in the LM head, ~0.02 ms reading the embedding
+
+Two changes got it from 16.3 to 24.5 tok/s, both from measurement rather than assumption:
+6-bit palettisation (16.3 -> 21.1), then splitting the 128,000-way LM head into two chunks
+of 64,000 so both matmuls land on the engine instead of the CPU (21.1 -> 24.5, the whole
+head cost 11.4 ms in place and 3.0 ms split).
 
 The 46 ms is measured, not estimated, and the 31 ms of arithmetic beneath it is measured
 per program. Long contexts are slower: the full-attention programs read a 28,672-row tile

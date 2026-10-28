@@ -31,7 +31,9 @@ programs), not a merge and not a fine-tune. No weights were retrained.
 | `layer{N}_conv.mlpackage` | 13 short-convolution layers, history passed as I/O tensors |
 | `layer{N}_full.mlpackage` | 6 full-attention layers, 28,672-row `MLState` cache |
 | `layer{N}_slide.mlpackage` | 5 sliding-attention layers, 256-row cache |
-| `final_norm.mlpackage`, `lm_head.mlpackage` | final norm and the 128,000-way head |
+| `final_norm.mlpackage` | the final norm |
+| `lm_head.mlpackage` | the 128,000-way head (whole) |
+| `lm_head_a/b.mlpackage` | the same head split into 2 x 64,000 rows — **both ops place on the engine**, 11.4 ms -> 3.0 ms |
 | `embed_tokens.npy` | the embedding table |
 | `rope.npz`, `layer_types.json` | rotary tables and the layer map |
 
@@ -48,9 +50,9 @@ LFM3_ANE=$PWD/model-28k-lut6 python lfm3-omni-ane/tools/lfm3_serve.py
 
 ## Measured
 
-* **21.1 tok/s** cold decode, **21.5 tok/s** with a prefix-cache hit, 0.648 s to first token
+* **24.4 tok/s** cold decode, **24.5 tok/s** with a prefix-cache hit, 0.49 s to first token
 * 28,672-token context
-* palettization: 16.3 -> 21.1 tok/s, answers unchanged ("Japan -> Tokyo", "Italy -> Rome")
+* palettisation 16.3 -> 21.1 tok/s, then the split head 21.1 -> 24.5 tok/s, answers unchanged throughout ("Japan -> Tokyo", "Italy -> Rome")
 
 ## Limits
 
@@ -60,4 +62,3 @@ LFM3_ANE=$PWD/model-28k-lut6 python lfm3-omni-ane/tools/lfm3_serve.py
   numerically exact but the generation loop yields quiet frames.
 * The LM head runs on the CPU (11.4 ms/token); Core ML will not place a 128,000-way matmul
   on the engine whole.
-
