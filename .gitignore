@@ -1,0 +1,8 @@
+models/
+model-28k/
+model-28k-lut6/
+pylibs/
+*.log
+__pycache__/
+*.npy
+*.npz
