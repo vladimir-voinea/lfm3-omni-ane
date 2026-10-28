@@ -1,8 +1,8 @@
-import os
 
-from paths import SOURCE
 # Audio tower, transcribed: mel -> downsampler -> 17-layer LFM2 -> projector.
 from __future__ import annotations
+import os
+from paths import SOURCE
 
 import numpy as np
 import torch

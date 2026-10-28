@@ -1,10 +1,10 @@
-import os
 
-from paths import MODEL, SOURCE
 # The vision tower, transcribed from modeling_lfm3_vl.py and run in torch fp32.
 # Checked by shape and by finiteness on a synthetic image; the behavioural check
 # (a caption that matches the picture) comes after it is converted.
 from __future__ import annotations
+import os
+from paths import MODEL, SOURCE
 
 import numpy as np
 import torch

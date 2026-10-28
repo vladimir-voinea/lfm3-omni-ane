@@ -1,9 +1,9 @@
-import os
 
-from paths import ANE, MODEL, PROJECT, SOURCE
 # Is the ANE model producing the same logits as the real one?  Load the released
 # model on the CPU and compare the top-5 for the same token ids.
 from __future__ import annotations
+import os
+from paths import ANE, MODEL, PROJECT, SOURCE
 
 import json
 import sys

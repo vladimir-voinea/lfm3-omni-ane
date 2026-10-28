@@ -1,9 +1,9 @@
-import os
 
-from paths import SOURCE
 # Liquid codec decoder, transcribed: FSQ codes -> latents -> 512-wide sandwich-norm LFM
 # stack -> magnitude/phase -> inverse STFT -> audio.
 from __future__ import annotations
+import os
+from paths import SOURCE
 
 import numpy as np
 import torch

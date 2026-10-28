@@ -1,6 +1,4 @@
-import os
 
-from paths import SOURCE
 # Tiled full attention, verified before it is scaled to 75k.
 #
 # A tile program owns one slice of the sequence (its own KV cache) and returns an
@@ -9,6 +7,8 @@ from paths import SOURCE
 # the MLP.  Here the sequence is 40 tokens over 3 tiles of 16 so the whole thing is
 # checkable against plain full attention.
 from __future__ import annotations
+import os
+from paths import SOURCE
 
 import numpy as np
 import torch

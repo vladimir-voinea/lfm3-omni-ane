@@ -1,9 +1,9 @@
-import os
 
-from paths import MODEL, PROJECT, SOURCE
 # The same 24-layer stack in pure PyTorch, all tensors (1, T, H).
 # Exposes forward(ids) -> logits for the last position, with the weights loaded once.
 from __future__ import annotations
+import os
+from paths import MODEL, PROJECT, SOURCE
 
 import json
 
