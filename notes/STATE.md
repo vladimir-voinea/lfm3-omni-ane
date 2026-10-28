@@ -1041,21 +1041,18 @@ In-situ profile of one decode step (median of 10, LUT6):
 | 6 full-attention layers | 16.25 |
 | 5 sliding-attention layers | 3.78 |
 | final norm + **LM head** | **11.42** |
-## ROUND 44: image over HTTP, and the bug that kept it grey
+### Disk, again
 
-The 'Gray' answer had a mundane cause: the server has two paths, and only the streaming
-one forwarded `image_rows`. The non-streaming path called `Engine.generate(...)`, which
-did not even accept the argument, so the `<|image|>` placeholder was fed to the model with
-**no vectors** -- the model saw an empty slot and answered for a blank image.
+`tools/clean_caches.sh` now exists and uses `getconf DARWIN_USER_TEMP_DIR` (verified:
+the same directory, `/var/folders/3v/.../T/`, currently holding **0** `.mlmodelc` dirs).
+Space drifts between 20 and 28 GB as other applications write; the project's own footprint
+is now fixed and small:
 
-Bisecting found it in one step: reproducing the server's parsing in a plain script gave
-**'Red'**, so the parse and the vision path were fine and the difference had to be in the
-hand-off. `generate()` now takes and forwards `image_rows`, and the API answers:
+| item | size |
+|---|---|
+| `models/LFM3-Omni-2B` (source, needed to rebuild) | 4.2 GB |
+| `model-28k-lut6` (the shipped build) | 2.0 GB |
+| system temp caches | 802 MB, and regenerable |
 
-| image | answer |
-| --- | --- |
-| red 224x224 | **Red** |
-| green 224x224 | **Green** |
-
-So both directions of multimodal now work over HTTP: image/audio in, speech out (speech
-as a CLI path for the memory reason recorded in round 42).
+No duplicates remain: the fp16 intermediate is gone and every tool now defaults to the
+LUT6 build.
