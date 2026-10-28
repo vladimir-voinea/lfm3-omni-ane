@@ -1041,21 +1041,24 @@ In-situ profile of one decode step (median of 10, LUT6):
 | 6 full-attention layers | 16.25 |
 | 5 sliding-attention layers | 3.78 |
 | final norm + **LM head** | **11.42** |
-## ROUND 58: the long-context fix is correct, not merely non-crashing
+## ROUND 59 (cont.): everything is back on this machine
 
-A crash fix that silently corrupts attention is worse than the crash, so: needle test. A
-fact is planted at the start of the prompt and asked for at the end.
+| path | result |
+| --- | --- |
+| text | *The capital of Japan is Tokyo.* 26.7 cold / 33.3 warm tok/s |
+| image in | red -> **Red**, green -> **Green**, blue -> **Blue** |
+| speech out | *'Good to be back online.'* -> 1.84 s, rms 0.0685, peak 0.46 |
+| audio in | same weights, same path as before |
+| tool calling | verified earlier, unaffected |
 
-| prompt tokens | answer | wall time |
-| --- | --- | --- |
-| 289 | **PLATYPUS-42** | 8.8 s |
-| 1,589 | **PLATYPUS-42** | 45.7 s |
-| 5,229 | **PLATYPUS-42** | 149.1 s |
+The 4.3 GB source is on disk (`models/LFM3-Omni-2B/`, 665 tensors) plus the 147 MB codec,
+so the deprecated 'needs the source weights' failure is gone.
 
-Retrieval survives across the whole shipped window, which means the ring-buffered sliding
-caches and the absolute-position rotation are wired correctly -- not just that the process
-stopped raising.
+### A bug the portability pass left behind
 
-The wall times also show where the cost sits: 5,229 tokens of prompt costs 149 s, and
-almost all of it is **prefill at ~35 tok/s**. Decode after that is still 22-28 tok/s. So a
-long chat turn is dominated by reading the prompt, not by answering.
+`say.py` died with `from __future__ imports must occur at the beginning of the file`: my
+path-rewriting script had inserted `import os` and `from paths import ...` above the
+`__future__` line in **six** files (audio_ref, codec_ref, ref_logits, ref_stack, tiled_parts,
+vision_ref). Fixed by moving the `__future__` line back to the top. Worth noting because the
+syntax sweep after the rewrite did not catch it -- `ast.parse` accepts an out-of-order
+`__future__`? It does not; the sweep simply ran before those files were re-imported.
