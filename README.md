@@ -96,9 +96,10 @@ for a sampler), and repeating a single audio frame is not a valid loudness test.
 
 ## Limits, stated plainly
 
-* **75k context is not usable.** The tiled attention mechanism runs and matches full
-  attention to 2.46 % over three tiles, but 2 % per layer compounds across 24 layers. The
-  shipping configuration is the single 28,672-token cache.
+* **75k context is not reachable.** Measured both ways: fp16 tiles cost ~2 % per layer
+  (compounds across 24 layers); an fp32 tile of the same size is exact but Core ML puts it
+  on the CPU at **23.5 ms** each, and 75k needs 18 of them per token -- about **2 tok/s**.
+  The shipping configuration is the exact single 28,672-token cache.
 * **Audio output does not yet produce good speech.** Both halves are numerically exact; the
   generation loop produces quiet frames, so the sampler is still being diagnosed.
 * **The LM head runs on the CPU**, costing 11.4 ms per token.

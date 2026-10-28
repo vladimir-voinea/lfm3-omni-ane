@@ -1041,23 +1041,33 @@ In-situ profile of one decode step (median of 10, LUT6):
 | 6 full-attention layers | 16.25 |
 | 5 sliding-attention layers | 3.78 |
 | final norm + **LM head** | **11.42** |
-## ROUND 35: regression on the published state, and LUT6 is the default for a reason
+## ROUND 36: 75k measured against both walls -- it cannot be delivered here
 
-The runtime changed several times since the multimodal work (sessions, incremental masks,
-selectable head), so all the headline paths were re-run against the **published** build:
+A full-size tile (28,672 rows) built at **FLOAT32** to fix the 2 % accuracy problem:
 
-| path | result |
-|---|---|
-| image in, LUT6 | *"...a tranquil coastal scene at dusk..."* and **Beach** -- unchanged |
-| audio in, LUT6 | *"The capital of France is Paris."* twice -- exact |
-| text engine, LUT6 | Tokyo / Rome, 21.5 tok/s |
+| | fp16 tile | fp32 tile |
+|---|---|---|
+| placement | 66 ops on the engine | **71 on the CPU**, 4 on the engine |
+| dispatch | ~2.5 ms | **23.51 ms** |
+| per-layer accuracy | ~2 % | would be exact |
 
-One new operational fact: the **pre-palettisation directory (3.7 GB) now fails to bulk-load
-26 programs** -- `make_state()` raises `This model was not loaded with the Core ML
-Framework` -- while the LUT6 build (1.7 GB) loads and runs every path. Each fp16 program
-loads and makes its state fine *on its own*, so this is again a memory ceiling, not a
-corrupt file. The published model is the LUT6 build, which is what the README and the
-model card already point at, so nothing users download is affected.
+75k needs three tiles across six full-attention layers: **18 dispatches**. At the fp32
+figure that is **423 ms of attention per token -- about 2 tok/s**, before any other work.
+At the fp16 figure it is ~45 ms (≈13 tok/s) but with ~2 % error per layer, which compounds
+across 24 layers into nonsense.
 
-That is worth stating in the README explicitly: **use the palettised build**; the fp16 one
-is a conversion intermediate on this machine.
+So 75k is blocked by two independent walls and no configuration escapes both:
+
+* **fp16 tiles are too inaccurate** (the reason 75k is 'not usable' rather than 'slow'),
+* **fp32 tiles are too slow** (2 tok/s), because Core ML will not place an fp32 program on
+  the engine at all -- it hands the whole graph to the CPU.
+
+This is now a measured conclusion rather than a shrug, and it belongs next to the claim in
+the README. The shipping configuration stays at the exact single 28,672-token cache.
+
+### What that means for the objective
+
+Two clauses are delivered (multimodal in, engine/harness/server), one is published, one is
+met at short context (>20 tok/s), one is a documented precision limit (speech out), and
+**75k is not reachable on this conversion** -- the evidence above is why, and it is worth
+more than repeating the attempt in a different shape.
