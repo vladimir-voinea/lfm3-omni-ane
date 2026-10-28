@@ -1041,18 +1041,36 @@ In-situ profile of one decode step (median of 10, LUT6):
 | 6 full-attention layers | 16.25 |
 | 5 sliding-attention layers | 3.78 |
 | final norm + **LM head** | **11.42** |
-### Disk, again
+## ROUND 45: audio in over HTTP, caches moved off temp, everything pushed
 
-`tools/clean_caches.sh` now exists and uses `getconf DARWIN_USER_TEMP_DIR` (verified:
-the same directory, `/var/folders/3v/.../T/`, currently holding **0** `.mlmodelc` dirs).
-Space drifts between 20 and 28 GB as other applications write; the project's own footprint
-is now fixed and small:
+Audio input works over the API now, the same way images do:
 
-| item | size |
-|---|---|
-| `models/LFM3-Omni-2B` (source, needed to rebuild) | 4.2 GB |
-| `model-28k-lut6` (the shipped build) | 2.0 GB |
-| system temp caches | 802 MB, and regenerable |
+| input | answer |
+| --- | --- |
+| 16 kHz WAV, *'The capital of France is Paris.'* | **The capital of France is Paris.** |
 
-No duplicates remain: the fp16 intermediate is gone and every tool now defaults to the
-LUT6 build.
+It failed first with `make_state()` -- the audio encoder weights (~400 MB) sat beside the
+26 resident programs. Fixed by dropping the encoder weights immediately after projection
+instead of caching them.
+
+### Temp
+
+Checked rather than assumed: `/tmp` and `/var/folders/...` are **the data volume**
+(`/dev/disk3s5`), not a RAM disk, so an `.mlmodelc` cache there costs disk, not memory.
+Even so, the runtime now sets `TMPDIR` to `disk-tmp/` inside the project before loading,
+and `tools/clean_caches.sh` removes `*.mlmodelc`/`*.mlpackage` from temp on demand.
+No `.mlmodelc` of mine remains in temp.
+
+### What is where
+
+| place | contents |
+| --- | --- |
+| GitHub `vladimir-voinea/lfm3-omni-ane` | tools, probes, notes, restore instructions |
+| HuggingFace `vladimir94/lfm3-omni-2b-ane-coreml` | **96 files, 2.18 GB** -- programs, head splits, rope, layer map, tokenizer, configs |
+| local disk | 2.0 GB build + ~1 MB code; **entirely disposable** |
+
+The local footprint is now two items: the 2.0 GB converted build and 2 MB of code. Deleting
+either loses nothing -- `README` has the two commands that restore both. The 4.3 GB source
+model is already gone and is not needed to run anything: only `tokenizer.json`,
+`config.json` and `generation_config.json` were, and those now live in the model directory
+and on HuggingFace.
