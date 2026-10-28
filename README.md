@@ -74,9 +74,10 @@ python tools/palettize_all.py
 python tools/lfm3_engine.py                       # one prompt, prints tok/s
 python tools/lfm3_serve.py                        # OpenAI-compatible on :8010
 
-# 5. images and audio
+# 5. images, audio in, and speech out
 python tools/vision_beach.py                      # caption a photo
 python tools/audio_chat.py                        # transcribe a WAV
+python tools/say.py 'Good morning, how are you?' out.wav   # speech out (24 kHz)
 ```
 
 Requires an Apple-silicon Mac, `coremltools` (tested 8.x), and a Python with
