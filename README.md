@@ -19,6 +19,7 @@ small Python runtime.
 | audio output — generation loop | **working** | speech level: rms 0.072, spectrum matches the reference (centroid 438 Hz vs 532 Hz) |
 | engine: sessions, prefix cache, sampling | **working** | 2nd turn re-feeds 14 of 18 tokens, first token 0.92 -> 0.70 s |
 | server: OpenAI-compatible, streaming | **working** | `/v1/chat/completions`, incremental SSE, `[DONE]` |
+| **tool calling** | **working** | `tools` in the request → `finish_reason: tool_calls` with parsed arguments |
 | palettisation (LUT6) | **working** | 16.3 -> 21.1 tok/s, same answers |
 | LM head split 2 x 64,000 | **working** | 21.1 -> **24.5 tok/s**, both ops on the engine |
 | 75k context | **not usable** | mechanism works, 2.1 % per-layer error |
@@ -108,6 +109,20 @@ against the transcription. That is how these were found:
 Two measurement traps are recorded in `notes/STATE.md` because they cost real time: a
 cosine of 0.998 can hide codes that disagree 39 % of the time (argmax agreement is the metric
 for a sampler), and repeating a single audio frame is not a valid loudness test.
+
+## Tool calling
+
+The model has native tool tokens and the official `chat_template.jinja` is used verbatim
+(rendered with jinja2, `{% generation %}` markers stripped), so tools go in exactly as
+trained. Emitted calls come back in the OpenAI shape:
+
+```json
+{"finish_reason": "tool_calls",
+ "tool_calls": [{"type": "function",
+                 "function": {"name": "get_weather", "arguments": "{\"city\": \"Paris\"}"}}]}
+```
+
+That makes it droppable into any OpenAI-compatible agent harness.
 
 ## Restoring this checkout
 

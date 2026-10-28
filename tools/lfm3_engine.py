@@ -27,11 +27,17 @@ def load_tokenizer():
     return Tokenizer.from_file(os.path.join(MODEL_DIR, 'tokenizer.json'))
 
 
-def render_chat(messages) -> str:
-    parts = [('<|im_start|>%s\n%s<|im_end|>\n' % (m['role'], m['content'])) for m in messages]
-    parts.append('<|im_start|>assistant\n')
-    return ''.join(parts)
-
+def render_chat(messages, tools=None, enable_thinking=False):
+    """Use the model's own chat template when it is available: it is the only thing that
+    knows how tools, images and thinking markers must be spelled."""
+    try:
+        from lfm3_chat import render
+        return render(messages, tools=tools, enable_thinking=enable_thinking,
+                      add_generation_prompt=True)
+    except Exception:
+        parts = [('<|im_start|>%s\n%s<|im_end|>\n' % (m['role'], m['content'])) for m in messages]
+        parts.append('<|im_start|>assistant\n')
+        return ''.join(parts)
 
 class Tracked:
     def __init__(self, session):
@@ -101,8 +107,8 @@ class Engine:
             yield token, info
 
     def stream(self, messages, params: SamplingParams, max_tokens: int = 256,
-               image_rows=None, audio_rows=None):
-        prompt = render_chat(messages)
+               image_rows=None, audio_rows=None, tools=None):
+        prompt = render_chat(messages, tools=tools)
         prompt_tokens = [1] + self.tokenizer.encode(prompt).ids
         with self.lock:
             if image_rows or audio_rows:
@@ -125,12 +131,12 @@ class Engine:
                 yield token, info
 
     def generate(self, messages, params: SamplingParams, max_tokens: int = 256,
-                 image_rows=None, audio_rows=None):
+                 image_rows=None, audio_rows=None, tools=None):
         produced = []
         meta = {}
         started = time.perf_counter()
-        for token, info in self.stream(messages, params, max_tokens,
-                                       image_rows=image_rows, audio_rows=audio_rows):
+        for token, info in self.stream(messages, params, max_tokens, image_rows=image_rows,
+                                       audio_rows=audio_rows, tools=tools):
             produced.append(token)
             meta.update(info)
         elapsed = time.perf_counter() - started

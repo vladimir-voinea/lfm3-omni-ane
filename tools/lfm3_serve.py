@@ -131,6 +131,7 @@ class Handler(BaseHTTPRequestHandler):
         if not self.path.startswith('/v1/chat/completions'):
             return self._json({'error': 'not found'}, 404)
 
+        tools = request.get('tools')
         messages = request.get('messages') or []
         image_rows = None
         audio_rows = None
@@ -168,11 +169,19 @@ class Handler(BaseHTTPRequestHandler):
 
         if not stream:
             result = engine().generate(messages, params, max_tokens=max_tokens,
-                                        image_rows=image_rows, audio_rows=audio_rows)
+                                        image_rows=image_rows, audio_rows=audio_rows,
+                                        tools=tools)
+            from lfm3_tools import parse_tool_calls, strip_tool_calls
+            calls = parse_tool_calls(result['text'])
+            message = {'role': 'assistant', 'content': strip_tool_calls(result['text'])}
+            if calls:
+                message['content'] = message['content'] or None
+                message['tool_calls'] = calls
             return self._json({
                 'id': 'chatcmpl-lfm3', 'object': 'chat.completion', 'model': MODEL_ID,
-                'choices': [{'index': 0, 'finish_reason': 'stop',
-                             'message': {'role': 'assistant', 'content': result['text']}}],
+                'choices': [{'index': 0,
+                             'finish_reason': 'tool_calls' if calls else 'stop',
+                             'message': message}],
                 'usage': {'prompt_tokens': result['prompt_tokens'],
                           'completion_tokens': len(result['tokens']),
                           'total_tokens': result['prompt_tokens'] + len(result['tokens'])}})
@@ -192,7 +201,8 @@ class Handler(BaseHTTPRequestHandler):
             meta = {}
             chunk_delay = 0.0
             for token, info in engine().stream(messages, params, max_tokens=max_tokens,
-                                               image_rows=image_rows, audio_rows=audio_rows):
+                                               image_rows=image_rows, audio_rows=audio_rows,
+                                               tools=tools):
                 meta.update(info)
                 produced.append(token)
                 piece = engine().tokenizer.decode([token])
