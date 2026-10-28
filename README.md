@@ -144,6 +144,19 @@ downloaded model directory. Re-download the source only to rebuild the programs:
 huggingface-cli download LiquidAI/LFM3-Omni-2B --local-dir models/LFM3-Omni-2B
 ```
 
+### What needs the source model
+
+Text and tool calling run from the converted build alone. **Image input, audio input and
+speech output additionally need the original weights** (the vision tower, the audio encoder,
+the depth decoder and the codec are still torch fp32 in this conversion, not Core ML):
+
+```bash
+huggingface-cli download LiquidAI/LFM3-Omni-2B --local-dir models/LFM3-Omni-2B
+```
+
+Converting those four to Core ML is the obvious next step; until then they cost 4.3 GB of
+disk and run on the CPU.
+
 ### Where Core ML puts its caches
 
 Each program load compiles an `.mlmodelc`. They land under the user temp directory

@@ -1041,32 +1041,28 @@ In-situ profile of one decode step (median of 10, LUT6):
 | 6 full-attention layers | 16.25 |
 | 5 sliding-attention layers | 3.78 |
 | final norm + **LM head** | **11.42** |
-## ROUND 46-47: tool calling -- the 'harness' clause
+## ROUND 48: the agent loop closes, and an honest consequence of the disk cleanup
 
-The model has native tool tokens (`<|tool_call_start|>`, `<|tool_list_start|>`), so this
-was not something to imitate: fetch the official `chat_template.jinja` and render prompts
-with it.
+Two turns through the engine, with a `get_weather` tool:
 
-* `tools/lfm3_chat.py` renders through jinja2. The template contains `{% generation %}`
-  markers that transformers uses for masking and plain jinja2 rejects; they carry no text,
-  so they are stripped before compiling.
-* `render_chat` uses the template when present and falls back to the old hand-written
-  format, so nothing that worked before can break.
-* `tools/lfm3_tools.py` parses the model's text call format
-  (`<tool_call><function=X><parameter=Y>v</parameter></function></tool_call>`) into the
-  OpenAI `tool_calls` shape.
+1. the model emits `<tool_call><function=get_weather><parameter=city>Paris...`
+2. the harness feeds back a `tool` message; the official template renders it as
+   `<|im_start|>tool\n<tool_response>...</tool_response>`
+3. the model answers **'The current weather in Paris is 18°C with cloudy conditions.'**
 
-End to end, over HTTP, with a `get_weather` tool declared:
+That is the whole loop an agent harness needs, verified rather than assumed.
 
-```json
-{"finish_reason": "tool_calls",
- "tool_calls": [{"type": "function",
-                 "function": {"name": "get_weather",
-                              "arguments": "{\"city\": \"Paris\"}"}}]}
-```
+### What the cleanup cost
 
-Measured twice: through the engine directly, and through the server. That makes the model
-droppable into any OpenAI-compatible agent harness.
+Deleting the 4.3 GB source model took the vision tower, the audio encoder, the depth
+decoder and the codec with it -- those four are still **torch fp32**, not Core ML, so they
+read the original safetensors. Local state today:
 
-One process note: all of this lives outside the session workspace, so writes needed a
-sandbox escalation part-way through. Worth recording because it interrupted the round.
+| path | works now |
+|---|---|
+| text, tool calling, server, streaming | **yes** (converted build only) |
+| image in, audio in, speech out | **no** -- needs the source weights |
+
+Restoring them is one download, and it is documented in the README rather than left to be
+discovered. The real fix is converting those four towers to Core ML, which would remove the
+4.3 GB dependency and put them on the engine.
