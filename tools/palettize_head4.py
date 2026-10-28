@@ -1,13 +1,15 @@
 # The LM head costs 11.4 ms in the engine but 2.6 ms standalone: it is memory-bound.
 # Test a 4-bit head (half the traffic) and see what it does to speed and answers.
 import os
+
+from paths import BUILD, MODEL
 import shutil
 
 import coremltools as ct
 import coremltools.optimize.coreml as cto
 
-SRC = '/Users/vladimir/dev/lfm3-ane/model-28k/lm_head.mlpackage'
-DST = '/Users/vladimir/dev/lfm3-ane/model-28k-lut6/lm_head_lut4.mlpackage'
+SRC = os.path.join(BUILD, 'lm_head.mlpackage')
+DST = os.path.join(MODEL, 'lm_head_lut4.mlpackage')
 
 if __name__ == '__main__':
     model = ct.models.MLModel(SRC, compute_units=ct.ComputeUnit.CPU_AND_NE)

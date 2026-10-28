@@ -1,3 +1,6 @@
+import os
+
+from paths import ANE, MODEL, PROJECT
 # Image in: build a solid-colour picture, run it through the vision tower and the
 # projector, feed the resulting vectors into the text model where the <|image|>
 # placeholder sits, and ask the model what it sees. A right colour is the behavioural
@@ -9,14 +12,14 @@ import numpy as np
 import torch
 from tokenizers import Tokenizer
 
-sys.path.insert(0, '/Users/vladimir/dev/lfm3-ane/tools')
+sys.path.insert(0, PROJECT)
 
 from lfm3_runtime import Runtime
 from vision_ref import Vision, projector, P
 
 from safetensors import safe_open
 
-ANE = '/Users/vladimir/dev/lfm3-ane/model-28k-lut6'
+ANE = MODEL
 IDS = {'im_start': 124899, 'im_end': 124900, 'vision_start': 125009,
        'vision_end': 125010, 'image': 125030}
 
@@ -44,9 +47,9 @@ def main():
             if 'vision_tower' in k or 'multi_modal_projector' in k:
                 w[k] = f.get_tensor(k).float()
     import json
-    layer_types = json.load(open('/Users/vladimir/dev/lfm3-ane/model-28k-lut6/config.json'))['vision_config']['layer_types']
+    layer_types = json.load(open(os.path.join(MODEL, 'config.json')))['vision_config']['layer_types']
 
-    tok = Tokenizer.from_file('/Users/vladimir/dev/lfm3-ane/model-28k-lut6/tokenizer.json')
+    tok = Tokenizer.from_file(os.path.join(MODEL, 'tokenizer.json'))
     question = 'What colour fills this image? Answer with one word.'
     head = ('<|im_start|>user\n<|vision_start|><|image|><|vision_end|>%s<|im_end|>\n'
             '<|im_start|>assistant\n') % question

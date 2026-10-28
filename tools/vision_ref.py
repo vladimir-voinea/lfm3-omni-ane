@@ -1,3 +1,6 @@
+import os
+
+from paths import MODEL, SOURCE
 # The vision tower, transcribed from modeling_lfm3_vl.py and run in torch fp32.
 # Checked by shape and by finiteness on a synthetic image; the behavioural check
 # (a caption that matches the picture) comes after it is converted.
@@ -7,7 +10,7 @@ import numpy as np
 import torch
 from safetensors import safe_open
 
-P = '/Users/vladimir/dev/lfm3-ane/models/LFM3-Omni-2B/model.safetensors'
+P = os.path.join(SOURCE, 'model.safetensors')
 H, NH, NKV, HD, FF = 1024, 16, 8, 64, 2560
 MERGE, KS, EPS, THETA = 2, 3, 1e-5, 1e6
 
@@ -118,7 +121,7 @@ if __name__ == '__main__':
         for k in f.keys():
             if 'vision_tower' in k or 'multi_modal_projector' in k:
                 w[k] = f.get_tensor(k).float()
-    types = json.load(open('/Users/vladimir/dev/lfm3-ane/model-28k-lut6/config.json'))
+    types = json.load(open(os.path.join(MODEL, 'config.json')))
     layer_types = types['vision_config']['layer_types']
     torch.manual_seed(0)
     h, wd = 16, 16                       # 256 patches, 64 after merge

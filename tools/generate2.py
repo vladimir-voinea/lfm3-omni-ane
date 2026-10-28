@@ -1,15 +1,18 @@
+import os
+
+from paths import ANE, MODEL, PROJECT, SOURCE
 # The engine, with the BOS token the model expects, on both prompt forms.
 import sys
 
 import numpy as np
 from tokenizers import Tokenizer
 
-sys.path.insert(0, '/Users/vladimir/dev/lfm3-ane/tools')
+sys.path.insert(0, PROJECT)
 
 from run_model import Lfm3Ane
 
-MODEL = '/Users/vladimir/dev/lfm3-ane/models/LFM3-Omni-2B'
-ANE = '/Users/vladimir/dev/lfm3-ane/model-28k-lut6'
+MODEL = SOURCE
+ANE = MODEL
 
 
 def generate(runtime, tok, ids, steps=8):

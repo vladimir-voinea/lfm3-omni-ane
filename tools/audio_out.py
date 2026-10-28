@@ -1,3 +1,6 @@
+import os
+
+from paths import ANE, MODEL, PROJECT
 # Speech out, end to end: the ANE text model supplies a hidden state per frame, the depth
 # decoder turns it into 12 codes, the codec turns the codes into 24 kHz audio.
 import sys
@@ -8,14 +11,14 @@ import torch
 from safetensors import safe_open
 from tokenizers import Tokenizer
 
-sys.path.insert(0, '/Users/vladimir/dev/lfm3-ane/tools')
+sys.path.insert(0, PROJECT)
 
 import codec_ref
 import depth_ref
 from lfm3_runtime import Runtime
 
 P = depth_ref.P
-ANE = '/Users/vladimir/dev/lfm3-ane/model-28k-lut6'
+ANE = MODEL
 AUDIO_START = 125012
 EOS_AUDIO = 2016
 FRAMES = 24
@@ -54,7 +57,7 @@ def sample_codes(hidden, w, history=None, schedule=(4, 4, 4), temperature=0.4, p
 
 
 def main():
-    tok = Tokenizer.from_file('/Users/vladimir/dev/lfm3-ane/model-28k-lut6/tokenizer.json')
+    tok = Tokenizer.from_file(os.path.join(MODEL, 'tokenizer.json'))
     head = '<|im_start|>user\nSay hello in a friendly voice.<|im_end|>\n<|im_start|>assistant\n<|audio_start|>'
     # no BOS: the official processor feeds the template tokens alone, and an extra BOS
     # changes the hidden state enough to wreck the speech (cos 0.64 instead of 0.99)

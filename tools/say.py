@@ -1,6 +1,8 @@
 # Text to speech through the engine: prompt -> ANE text model -> depth decoder -> codec.
 #   python tools/say.py 'Good morning, how are you?' out.wav
 import os
+
+from paths import ANE, MODEL
 import sys
 import wave
 
@@ -22,8 +24,8 @@ _CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file
 os.makedirs(_CACHE_DIR, exist_ok=True)
 os.environ['TMPDIR'] = _CACHE_DIR
 
-MODEL = '/Users/vladimir/dev/lfm3-ane/model-28k-lut6'
-ANE = os.environ.get('LFM3_ANE', '/Users/vladimir/dev/lfm3-ane/model-28k-lut6')
+MODEL = MODEL
+ANE = os.environ.get('LFM3_ANE', MODEL)
 AUDIO_START = 125012
 EOS_AUDIO = 2016
 LAYERS = ['conv', 'conv', 'attn', 'conv', 'attn', 'conv', 'attn', 'conv']

@@ -1,14 +1,17 @@
+import os
+
+from paths import MODEL, PROJECT, SOURCE
 # Does the model need its BOS token, and does a chat-formatted prompt behave better?
 import sys
 
-sys.path.insert(0, '/Users/vladimir/dev/lfm3-ane/tools')
+sys.path.insert(0, PROJECT)
 
 import numpy as np
 from tokenizers import Tokenizer
 
 from ref_stack import forward
 
-MODEL = '/Users/vladimir/dev/lfm3-ane/models/LFM3-Omni-2B'
+MODEL = SOURCE
 
 
 def run(tok, ids, steps=8):

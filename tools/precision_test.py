@@ -3,6 +3,8 @@
 # times a dispatch, so accuracy and speed can be weighed together.
 import collections
 import os
+
+from paths import PROJECT, SOURCE
 import statistics
 import subprocess
 import sys
@@ -14,11 +16,11 @@ import coremltools as ct
 from coremltools.models.compute_plan import MLComputePlan
 from safetensors import safe_open
 
-sys.path.insert(0, '/Users/vladimir/dev/lfm3-ane/tools')
+sys.path.insert(0, PROJECT)
 
 from tiled_parts2 import D, EPS, H, NKV, NH, SCALE, Tile, rotate_half, rms1, rope
 
-P = '/Users/vladimir/dev/lfm3-ane/models/LFM3-Omni-2B/model.safetensors'
+P = os.path.join(SOURCE, 'model.safetensors')
 ROWS, STEPS = 16, 6
 
 t = {}

@@ -1,3 +1,6 @@
+import os
+
+from paths import SOURCE
 # Liquid codec decoder, transcribed: FSQ codes -> latents -> 512-wide sandwich-norm LFM
 # stack -> magnitude/phase -> inverse STFT -> audio.
 from __future__ import annotations
@@ -7,7 +10,7 @@ import torch
 import torch.nn.functional as F
 from safetensors import safe_open
 
-CODEC = '/Users/vladimir/dev/lfm3-ane/models/LFM3-Omni-2B/audio_tokenizer/model.safetensors'
+CODEC = os.path.join(SOURCE, 'audio_tokenizer', 'model.safetensors')
 H, FF, CB, FSQ_DIM = 512, 2304, 12, 4
 N_FFT, HOP, WIN, FRAME_STACK = 1280, 320, 1280, 6
 WINDOW = 30

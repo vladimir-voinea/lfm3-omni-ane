@@ -1,11 +1,13 @@
 # Publish the converted programs. The token is read from a file and never printed.
 import os
+
+from paths import MODEL
 import sys
 
 from huggingface_hub import HfApi
 
 REPO = 'vladimir94/lfm3-omni-2b-ane-coreml'
-MODEL_DIR = '/Users/vladimir/dev/lfm3-ane/model-28k-lut6'
+MODEL_DIR = MODEL
 CARD = '/Users/vladimir/dev/lfm3-ane-public-src/hf/README.md'
 
 token = open('/tmp/.hf_token').read().strip()

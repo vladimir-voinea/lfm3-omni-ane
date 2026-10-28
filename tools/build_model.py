@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import json
 import os
+
+from paths import BUILD, MODEL, SOURCE
 import sys
 
 import numpy as np
@@ -14,8 +16,8 @@ import torch
 import coremltools as ct
 from safetensors import safe_open
 
-P = '/Users/vladimir/dev/lfm3-ane/models/LFM3-Omni-2B/model.safetensors'
-OUT = '/Users/vladimir/dev/lfm3-ane/model-28k'
+P = os.path.join(SOURCE, 'model.safetensors')
+OUT = BUILD
 H, FF, K, D = 2048, 7680, 7, 128
 NH, NKV = 16, 4
 EPS = 1e-5
@@ -183,7 +185,7 @@ if __name__ == '__main__':
         keys = [k for k in f.keys() if k.startswith('model.language_model')]
         emb = f.get_tensor('model.language_model.embed_tokens.weight').to(torch.float32)
         final_w = f.get_tensor('model.language_model.embedding_norm.weight').to(torch.float32)
-        types = json.load(open('/Users/vladimir/dev/lfm3-ane/model-28k-lut6/config.json'))
+        types = json.load(open(os.path.join(MODEL, 'config.json')))
         layer_types = types['text_config']['layer_types']
         for i, kind in enumerate(layer_types):
             t = {k.split('layers.%d.' % i)[1]: f.get_tensor(k).to(torch.float32)

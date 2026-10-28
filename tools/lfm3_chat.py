@@ -1,12 +1,14 @@
 # Render prompts with the model's own chat template (tools, images, audio, thinking)
 # instead of a hand-written approximation.
 import os
+
+from paths import MODEL
 import re
 
 import jinja2
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-MODEL_DIR = os.environ.get('LFM3_MODEL', '/Users/vladimir/dev/lfm3-ane/model-28k-lut6')
+MODEL_DIR = os.environ.get('LFM3_MODEL', MODEL)
 TEMPLATE = os.path.join(MODEL_DIR, 'chat_template.jinja')
 
 _ENV = None

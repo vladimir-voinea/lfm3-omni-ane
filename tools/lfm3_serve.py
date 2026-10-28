@@ -5,14 +5,15 @@ from __future__ import annotations
 
 import json
 import os
+
+from paths import ANE, PROJECT
 import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-sys.path.insert(0, '/Users/vladimir/dev/lfm3-ane/tools')
-sys.path.insert(0, '/Users/vladimir/dev/dory-ane-worktrees/DANE-5')
+sys.path.insert(0, PROJECT)
 
-from anemll.runtime.dory_sampling import SamplingParams  # noqa: E402
+from sampling import SamplingParams  # noqa: E402
 
 from lfm3_engine import Engine  # noqa: E402
 
@@ -39,7 +40,7 @@ def say(text, max_frames=48):
     path = handle.name
     handle.close()
     result = subprocess.run(
-        [sys.executable, '/Users/vladimir/dev/lfm3-ane/tools/say.py',
+        [sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'say.py'),
          text, path, str(max_frames)],
         capture_output=True, timeout=1800)
     if result.returncode:

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import os
+
+from paths import BUILD, PROJECT
 import time
 
 import numpy as np
@@ -89,11 +91,11 @@ class Lfm3Ane:
 
 if __name__ == '__main__':
     import sys
-    runtime = Lfm3Ane('/Users/vladimir/dev/lfm3-ane/model-28k')
+    runtime = Lfm3Ane(BUILD)
     print({'layers': len(runtime.layer_types), 'kinds': {k: runtime.layer_types.count(k)
           for k in set(runtime.layer_types)}}, flush=True)
     logits, seconds = runtime.step([1, 1000, 2000, 3000])
-    np.save('/Users/vladimir/dev/lfm3-ane/ane_logits.npy', logits.astype(np.float32))
+    np.save(os.path.join(PROJECT, 'ane_logits.npy'), logits.astype(np.float32))
     top = np.argsort(logits)[-5:][::-1]
     print({'first_token_seconds': round(seconds, 2),
            'logits_shape': list(logits.shape),

@@ -1,3 +1,6 @@
+import os
+
+from paths import MODEL, PROJECT, SOURCE
 # The same 24-layer stack in pure PyTorch, all tensors (1, T, H).
 # Exposes forward(ids) -> logits for the last position, with the weights loaded once.
 from __future__ import annotations
@@ -8,8 +11,8 @@ import numpy as np
 import torch
 from safetensors import safe_open
 
-P = '/Users/vladimir/dev/lfm3-ane/models/LFM3-Omni-2B/model.safetensors'
-CFG = '/Users/vladimir/dev/lfm3-ane/model-28k-lut6/config.json'
+P = os.path.join(SOURCE, 'model.safetensors')
+CFG = os.path.join(MODEL, 'config.json')
 H, D, NH, NKV, K = 2048, 128, 16, 4, 7
 EPS = 1e-5
 
@@ -98,4 +101,4 @@ if __name__ == '__main__':
     logits = forward([1, 1000, 2000, 3000])
     top = np.argsort(logits)[-5:][::-1]
     print({'ref_top5': top.tolist(), 'ref_values': [round(float(logits[i]), 3) for i in top]}, flush=True)
-    np.save('/Users/vladimir/dev/lfm3-ane/ref_logits.npy', logits.astype(np.float32))
+    np.save(os.path.join(PROJECT, 'ref_logits.npy'), logits.astype(np.float32))

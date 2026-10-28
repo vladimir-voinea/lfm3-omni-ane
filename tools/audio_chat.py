@@ -1,6 +1,8 @@
 # Audio in, end to end: real speech -> my mel -> my encoder -> projector -> text model.
 import json
 import os
+
+from paths import ANE, MODEL, PROJECT
 import sys
 import wave
 
@@ -9,13 +11,13 @@ import torch
 from tokenizers import Tokenizer
 from safetensors import safe_open
 
-sys.path.insert(0, '/Users/vladimir/dev/lfm3-ane/tools')
+sys.path.insert(0, PROJECT)
 
 import audio_ref
 from lfm3_runtime import Runtime
 from mel_front import log_mel
 
-ANE = os.environ.get('LFM3_ANE', '/Users/vladimir/dev/lfm3-ane/model-28k-lut6')
+ANE = os.environ.get('LFM3_ANE', MODEL)
 EOS = 124900
 
 
@@ -42,7 +44,7 @@ del w
 import gc
 gc.collect()
 
-tok = Tokenizer.from_file('/Users/vladimir/dev/lfm3-ane/model-28k-lut6/tokenizer.json')
+tok = Tokenizer.from_file(os.path.join(MODEL, 'tokenizer.json'))
 runtime = Runtime(ANE)
 
 for question in ('Transcribe the audio.', 'What did the speaker say?'):

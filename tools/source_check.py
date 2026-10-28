@@ -2,7 +2,9 @@
 # the converted build. Fail with the fix rather than a FileNotFoundError in some tensor load.
 import os
 
-SOURCE = '/Users/vladimir/dev/lfm3-ane/models/LFM3-Omni-2B'
+from paths import SOURCE
+
+SOURCE = SOURCE
 DOWNLOAD = ("huggingface-cli download LiquidAI/LFM3-Omni-2B --local-dir " + SOURCE)
 
 

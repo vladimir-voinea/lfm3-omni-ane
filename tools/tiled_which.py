@@ -1,3 +1,6 @@
+import os
+
+from paths import PROJECT, SOURCE
 # Which of the two new programs actually fails on the engine?
 import sys
 import traceback
@@ -7,11 +10,11 @@ import torch
 import coremltools as ct
 from safetensors import safe_open
 
-sys.path.insert(0, '/Users/vladimir/dev/lfm3-ane/tools')
+sys.path.insert(0, PROJECT)
 
 from tiled_parts import Epilogue, Tile
 
-P = '/Users/vladimir/dev/lfm3-ane/models/LFM3-Omni-2B/model.safetensors'
+P = os.path.join(SOURCE, 'model.safetensors')
 H, D, NH, NKV = 2048, 128, 16, 4
 ROWS, T = 16, 40
 

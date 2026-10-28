@@ -1,3 +1,6 @@
+import os
+
+from paths import ANE, MODEL, PROJECT, SOURCE
 # Is the ANE model producing the same logits as the real one?  Load the released
 # model on the CPU and compare the top-5 for the same token ids.
 from __future__ import annotations
@@ -7,13 +10,13 @@ import sys
 
 # appended, not prepended: the venv's numpy 1.26 must win over whatever numpy the
 # newer transformers pulled in, or coremltools' stack breaks
-sys.path.insert(0, '/Users/vladimir/dev/lfm3-ane/pylibs')
+sys.path.insert(0, os.path.join(PROJECT, 'pylibs'))
 
 import numpy as np
 import torch
 from transformers import AutoModel, AutoTokenizer
 
-MODEL = '/Users/vladimir/dev/lfm3-ane/models/LFM3-Omni-2B'
+MODEL = SOURCE
 IDS = [1, 1000, 2000, 3000]
 
 tok = None

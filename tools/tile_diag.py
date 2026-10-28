@@ -1,12 +1,15 @@
+import os
+
+from paths import PROJECT, SOURCE
 import sys
-sys.path.insert(0, '/Users/vladimir/dev/lfm3-ane/tools')
+sys.path.insert(0, PROJECT)
 import numpy as np
 import torch
 import coremltools as ct
 from safetensors import safe_open
 from tiled_parts2 import Tile, D, H, NKV, NH
 
-P = '/Users/vladimir/dev/lfm3-ane/models/LFM3-Omni-2B/model.safetensors'
+P = os.path.join(SOURCE, 'model.safetensors')
 ROWS = 16
 t = {}
 with safe_open(P, framework='pt') as fh:

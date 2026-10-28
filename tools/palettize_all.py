@@ -1,13 +1,15 @@
 # Palettize every program of the built model into a parallel directory, then the engine
 # can be pointed at it with LFM3_ANE.
 import os
+
+from paths import BUILD
 import shutil
 import sys
 
 import coremltools as ct
 import coremltools.optimize.coreml as cto
 
-SRC = '/Users/vladimir/dev/lfm3-ane/model-28k'
+SRC = BUILD
 
 
 def main():

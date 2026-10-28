@@ -1,3 +1,6 @@
+import os
+
+from paths import PROJECT, SOURCE
 # Check the tiled path against plain full attention over a 40-token sequence.
 import sys
 
@@ -6,11 +9,11 @@ import torch
 import coremltools as ct
 from safetensors import safe_open
 
-sys.path.insert(0, '/Users/vladimir/dev/lfm3-ane/tools')
+sys.path.insert(0, PROJECT)
 
 from tiled_parts import Epilogue, Tile, rotate_half, rope
 
-P = '/Users/vladimir/dev/lfm3-ane/models/LFM3-Omni-2B/model.safetensors'
+P = os.path.join(SOURCE, 'model.safetensors')
 H, D, NH, NKV, FF = 2048, 128, 16, 4, 7680
 EPS, SCALE = 1e-5, 0.0884
 T, TILES, ROWS = 40, 3, 16

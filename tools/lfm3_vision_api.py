@@ -1,3 +1,6 @@
+import os
+
+from paths import MODEL
 import base64
 import io
 import json
@@ -25,7 +28,7 @@ def _load():
         for key in handle.keys():
             if 'vision_tower' in key or 'multi_modal_projector' in key:
                 weights[key] = handle.get_tensor(key).float()
-    config = json.load(open('/Users/vladimir/dev/lfm3-ane/model-28k-lut6/config.json'))
+    config = json.load(open(os.path.join(MODEL, 'config.json')))
     tower = Vision(weights, config['vision_config']['layer_types'])
     _VISION['weights'] = weights
     _VISION['tower'] = tower

@@ -4,19 +4,20 @@ from __future__ import annotations
 
 import json
 import os
+
+from paths import MODEL, PROJECT
 import sys
 import threading
 import time
 
-sys.path.insert(0, '/Users/vladimir/dev/dory-ane-worktrees/DANE-5')
-sys.path.insert(0, '/Users/vladimir/dev/lfm3-ane/tools')
+sys.path.insert(0, PROJECT)
 
-from anemll.runtime.dory_sampling import Sampler, SamplingParams  # noqa: E402
+from sampling import Sampler, SamplingParams  # noqa: E402
 
 from lfm3_runtime import Runtime  # noqa: E402
 
-MODEL_DIR = os.environ.get('LFM3_MODEL', '/Users/vladimir/dev/lfm3-ane/model-28k-lut6')
-ANE_DIR = os.environ.get('LFM3_ANE', '/Users/vladimir/dev/lfm3-ane/model-28k-lut6')
+MODEL_DIR = os.environ.get('LFM3_MODEL', MODEL)
+ANE_DIR = os.environ.get('LFM3_ANE', MODEL)
 IMAGE_TOKEN = 125030
 AUDIO_TOKEN = 125031
 IM_END = 124900

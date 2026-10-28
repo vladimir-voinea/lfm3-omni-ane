@@ -1,15 +1,18 @@
+import os
+
+from paths import MODEL, PROJECT, SOURCE
 # The same prompt through the pure-torch reference, greedy, so the engine's output
 # can be compared against it word for word.
 import sys
 
-sys.path.insert(0, '/Users/vladimir/dev/lfm3-ane/tools')
+sys.path.insert(0, PROJECT)
 
 import numpy as np
 from tokenizers import Tokenizer
 
 from ref_stack import forward
 
-MODEL = '/Users/vladimir/dev/lfm3-ane/models/LFM3-Omni-2B'
+MODEL = SOURCE
 
 
 def main():

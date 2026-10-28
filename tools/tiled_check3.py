@@ -1,3 +1,6 @@
+import os
+
+from paths import ANE, PROJECT, SOURCE
 # Same tiled path, instrumented: every predict is labelled, so the failing call names
 # itself instead of surfacing as a bare ANE error. Short sequence to keep it quick.
 import sys
@@ -7,11 +10,11 @@ import torch
 import coremltools as ct
 from safetensors import safe_open
 
-sys.path.insert(0, '/Users/vladimir/dev/lfm3-ane/tools')
+sys.path.insert(0, PROJECT)
 
 from tiled_parts2 import D, H, NKV, NH, Epilogue, Tile, rope
 
-P = '/Users/vladimir/dev/lfm3-ane/models/LFM3-Omni-2B/model.safetensors'
+P = os.path.join(SOURCE, 'model.safetensors')
 T, TILES, ROWS = 40, 3, 16
 
 t = {}

@@ -1,3 +1,6 @@
+import os
+
+from paths import SOURCE
 # Audio tower, transcribed: mel -> downsampler -> 17-layer LFM2 -> projector.
 from __future__ import annotations
 
@@ -6,7 +9,7 @@ import torch
 import torch.nn.functional as F
 from safetensors import safe_open
 
-P = '/Users/vladimir/dev/lfm3-ane/models/LFM3-Omni-2B/model.safetensors'
+P = os.path.join(SOURCE, 'model.safetensors')
 H, NH, NKV, HD, FF = 768, 8, 4, 96, 1792
 EPS, WINDOW, CONV_L = 1e-5, 32, 3
 PRE = 'model.audio_encoder.lfm.'

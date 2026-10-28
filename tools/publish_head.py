@@ -1,9 +1,12 @@
+import os
+
+from paths import MODEL
 from huggingface_hub import HfApi
 
 token = open('/tmp/.hf_token').read().strip()
 api = HfApi(token=token)
 REPO = 'vladimir94/lfm3-omni-2b-ane-coreml'
-DIR = '/Users/vladimir/dev/lfm3-ane/model-28k-lut6'
+DIR = MODEL
 api.upload_folder(folder_path=DIR, repo_id=REPO, repo_type='model',
                   allow_patterns=['lm_head_a.mlpackage/*', 'lm_head_b.mlpackage/*'],
                   commit_message='chunked LM head: 2 x 64,000 rows, placed on the engine')

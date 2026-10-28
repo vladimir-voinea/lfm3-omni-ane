@@ -1,3 +1,6 @@
+import os
+
+from paths import SOURCE
 # Tiled full attention, verified before it is scaled to 75k.
 #
 # A tile program owns one slice of the sequence (its own KV cache) and returns an
@@ -12,7 +15,7 @@ import torch
 import coremltools as ct
 from safetensors import safe_open
 
-P = '/Users/vladimir/dev/lfm3-ane/models/LFM3-Omni-2B/model.safetensors'
+P = os.path.join(SOURCE, 'model.safetensors')
 H, D, NH, NKV, FF = 2048, 128, 16, 4, 7680
 EPS, SCALE = 1e-5, 0.0884
 

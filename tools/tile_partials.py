@@ -1,3 +1,6 @@
+import os
+
+from paths import PROJECT, SOURCE
 # Does the TILE program compute the right partials?  Feed it 6 positions, then compare
 # its (weighted values, max, sum) against the same numbers computed in torch fp32.
 import sys
@@ -7,11 +10,11 @@ import torch
 import coremltools as ct
 from safetensors import safe_open
 
-sys.path.insert(0, '/Users/vladimir/dev/lfm3-ane/tools')
+sys.path.insert(0, PROJECT)
 
 from tiled_parts2 import D, EPS, H, NKV, NH, SCALE, Tile, rotate_half, rms1, rope
 
-P = '/Users/vladimir/dev/lfm3-ane/models/LFM3-Omni-2B/model.safetensors'
+P = os.path.join(SOURCE, 'model.safetensors')
 ROWS, STEPS = 16, 6
 
 t = {}

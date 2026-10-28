@@ -1,3 +1,6 @@
+import os
+
+from paths import ANE, BUILD, MODEL, PROJECT
 # A real photograph, so the question has a right answer the model can know.
 import sys
 
@@ -6,12 +9,12 @@ import torch
 from tokenizers import Tokenizer
 from safetensors import safe_open
 
-sys.path.insert(0, '/Users/vladimir/dev/lfm3-ane/tools')
+sys.path.insert(0, PROJECT)
 
 from lfm3_runtime import Runtime
 from vision_ref import Vision, projector, P
 
-ANE = '/Users/vladimir/dev/lfm3-ane/model-28k'
+ANE = BUILD
 IMG_START, IMG_END, PLACEHOLDER = 125009, 125010, 125030
 EOS = 124900
 
@@ -57,8 +60,8 @@ if __name__ == '__main__':
         for k in f.keys():
             if 'vision_tower' in k or 'multi_modal_projector' in k:
                 w[k] = f.get_tensor(k).float()
-    layer_types = json.load(open('/Users/vladimir/dev/lfm3-ane/model-28k-lut6/config.json'))['vision_config']['layer_types']
-    tok = Tokenizer.from_file('/Users/vladimir/dev/lfm3-ane/model-28k-lut6/tokenizer.json')
+    layer_types = json.load(open(os.path.join(MODEL, 'config.json')))['vision_config']['layer_types']
+    tok = Tokenizer.from_file(os.path.join(MODEL, 'tokenizer.json'))
     for path, question in (('/tmp/beach.npy', 'Describe this image in one sentence.'),
                            ('/tmp/tree.npy', 'Is this a photo of a tree or a beach? One word.')):
         answer, shape = ask(w, layer_types, tok, question, path)
