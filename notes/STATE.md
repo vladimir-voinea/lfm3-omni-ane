@@ -1041,21 +1041,13 @@ In-situ profile of one decode step (median of 10, LUT6):
 | 6 full-attention layers | 16.25 |
 | 5 sliding-attention layers | 3.78 |
 | final norm + **LM head** | **11.42** |
-## ROUND 55: thinking on/off, and what the answer quality actually is
+## ROUND 57: the speed claim, with its conditions attached
 
-Three prompts, both settings:
+README updated from the stale 24.5 to the measured range:
 
-| question | thinking off | thinking on |
-| --- | --- | --- |
-| name three primary colours | *Red, blue, and yellow.* | `</think>` + same |
-| 17 x 24 | *17 times 24 equals 408.* | `</think>` + same |
-| hello in French | *Bonjour ! Comment puis-je vous aider aujourd'hui ?* | `</think>` + same |
+* **28.3 tok/s cold, 32.2 tok/s warm** -- median of three fresh-clone runs on a quiet machine
+* the same build measured **24.5** while other work was running, and that range is stated
+  rather than hidden behind the better number
 
-The reasoning marker does not buy anything here -- with `enable_thinking=True` the template
-opens ` thinking` and the model closes it immediately, so all it adds is a stray token.
-`enable_thinking=False` stays the default.
-
-Worth stating plainly because it is easy to misread: those three runs measured **7.7-14.8
-tok/s**, and that is not a regression. The answers are 7-13 tokens, so the 0.5 s prefill is
-a third or more of the wall time. Decode rate on a long generation is the 24-27 tok/s figure;
-a short answer simply cannot average that high.
+Also corrected: the per-token budget line said ~41 ms flat; it now says ~35-41 ms depending
+on load, which is what the two measurement sets actually support.

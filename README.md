@@ -26,8 +26,10 @@ small Python runtime.
 
 Speed, measured on an M-series Mac with the model palettised and a short context:
 
-* **24.4 tok/s** cold decode, **24.5 tok/s** with the prefix cache hit
-* 0.49 s to first token
+* **28.3 tok/s** cold decode and **32.2 tok/s** with the prefix cache hit (median of three
+  runs from a fresh clone on a quiet machine; the same build measured 24.5 with other work
+  running, so expect that range)
+* 0.60-0.65 s cold to first token, 0.45 s with the cache hit
 * one token costs ~41 ms: 14.8 ms in 13 conv layers, 20.0 ms in 11 attention layers,
   ~3 ms in the LM head, ~0.02 ms reading the embedding
 
