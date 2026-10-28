@@ -83,6 +83,7 @@ class Engine:
                 tracked.session.tokens.append(token)
                 yield token, {'first_token_seconds': first, 'prefix_reused': reused,
                               'prefill_tokens': len(pending),
+                              'prompt_tokens': len(prompt_tokens),
                               'decode_start': decode_start}
                 logits = self.runtime.step(tracked.session, [token])
 
@@ -97,6 +98,7 @@ class Engine:
         decode_time = elapsed - sum([0.0]) - meta.get('first_token_seconds', 0.0)
         rate = len(produced) / decode_time if decode_time > 0 else 0.0
         return {'text': self.tokenizer.decode(produced), 'tokens': produced,
+                'prompt_tokens': meta.get('prompt_tokens', 0),
                 'first_token_seconds': meta.get('first_token_seconds', 0.0),
                 'decode_tokens_per_second': rate,
                 'prefix_reused': meta.get('prefix_reused', False),
