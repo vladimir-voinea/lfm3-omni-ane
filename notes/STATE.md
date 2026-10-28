@@ -1041,24 +1041,21 @@ In-situ profile of one decode step (median of 10, LUT6):
 | 6 full-attention layers | 16.25 |
 | 5 sliding-attention layers | 3.78 |
 | final norm + **LM head** | **11.42** |
-## ROUND 54: the .mlmodelc leak is closed at the source
+## ROUND 55: thinking on/off, and what the answer quality actually is
 
-The user was right: 20 compiled `.mlmodelc` directories (1.1 GB) had accumulated again.
-Setting `TMPDIR` in the runtime did **not** redirect Core ML -- it compiles into the user
-temp directory regardless.
+Three prompts, both settings:
 
-Fixed properly: `Runtime.__init__` snapshots the temp directory, registers an `atexit` hook,
-and on exit removes exactly the `*.mlmodelc` directories that appeared during its lifetime.
-It never touches another process's cache.
+| question | thinking off | thinking on |
+| --- | --- | --- |
+| name three primary colours | *Red, blue, and yellow.* | `</think>` + same |
+| 17 x 24 | *17 times 24 equals 408.* | `</think>` + same |
+| hello in French | *Bonjour ! Comment puis-je vous aider aujourd'hui ?* | `</think>` + same |
 
-Verified: after a full engine run (cold + warm, Tokyo/Rome, 23.4/27.0 tok/s),
-**`find ... -name '*.mlmodelc' | wc -l` = 0**.
+The reasoning marker does not buy anything here -- with `enable_thinking=True` the template
+opens ` thinking` and the model closes it immediately, so all it adds is a stray token.
+`enable_thinking=False` stays the default.
 
-What is left in temp is 1.1 GB across ~19,000 small entries from other applications -- no
-file over 50 MB, and none of it mine.
-
-### Why the TPS figure moved
-
-The engine now answers with the official chat template (the `**Tokyo**` markdown is the
-model's own style, not mine) and measured **23.4 cold / 27.0 warm** in that run. The warm
-number crossing 27 is worth a proper measurement before it goes in a table.
+Worth stating plainly because it is easy to misread: those three runs measured **7.7-14.8
+tok/s**, and that is not a regression. The answers are 7-13 tokens, so the 0.5 s prefill is
+a third or more of the wall time. Decode rate on a long generation is the 24-27 tok/s figure;
+a short answer simply cannot average that high.

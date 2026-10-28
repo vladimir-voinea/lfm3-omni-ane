@@ -107,8 +107,8 @@ class Engine:
             yield token, info
 
     def stream(self, messages, params: SamplingParams, max_tokens: int = 256,
-               image_rows=None, audio_rows=None, tools=None):
-        prompt = render_chat(messages, tools=tools)
+               image_rows=None, audio_rows=None, tools=None, enable_thinking=False):
+        prompt = render_chat(messages, tools=tools, enable_thinking=enable_thinking)
         prompt_tokens = [1] + self.tokenizer.encode(prompt).ids
         with self.lock:
             if image_rows or audio_rows:
@@ -131,12 +131,13 @@ class Engine:
                 yield token, info
 
     def generate(self, messages, params: SamplingParams, max_tokens: int = 256,
-                 image_rows=None, audio_rows=None, tools=None):
+                 image_rows=None, audio_rows=None, tools=None, enable_thinking=False):
         produced = []
         meta = {}
         started = time.perf_counter()
         for token, info in self.stream(messages, params, max_tokens, image_rows=image_rows,
-                                       audio_rows=audio_rows, tools=tools):
+                                       audio_rows=audio_rows, tools=tools,
+                                       enable_thinking=enable_thinking):
             produced.append(token)
             meta.update(info)
         elapsed = time.perf_counter() - started
