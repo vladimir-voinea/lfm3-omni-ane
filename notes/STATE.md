@@ -1041,13 +1041,38 @@ In-situ profile of one decode step (median of 10, LUT6):
 | 6 full-attention layers | 16.25 |
 | 5 sliding-attention layers | 3.78 |
 | final norm + **LM head** | **11.42** |
-## ROUND 57: the speed claim, with its conditions attached
+## ROUND 57: the engine could not do more than 255 tokens, and the published model had it too
 
-README updated from the stale 24.5 to the measured range:
+Found while measuring the throughput curve: `IndexError: index 256 is out of bounds for axis
+0 with size 256`. The sliding-attention programs write their cache at the **absolute**
+position into a **256-row** buffer, and the sliding RoPE table only had 256 entries. So any
+prompt past 255 tokens crashed the engine.
 
-* **28.3 tok/s cold, 32.2 tok/s warm** -- median of three fresh-clone runs on a quiet machine
-* the same build measured **24.5** while other work was running, and that range is stated
-  rather than hidden behind the better number
+This never showed up because every previous test used a short prompt, and the long-context
+work went through the separate tiled check scripts rather than the engine. **The published
+model shared the bug**, so anyone downloading it would have hit this on their first long
+message.
 
-Also corrected: the per-token budget line said ~41 ms flat; it now says ~35-41 ms depending
-on load, which is what the two measurement sets actually support.
+Fixed in two places, neither needing a rebuild:
+
+1. `rope.npz` regenerated with **28,672** sliding rows (the same generator reproduces the old
+   tables to 2.4e-4, so the convention is unchanged) -- uploaded to HuggingFace.
+2. the runtime writes sliding caches at `position % 256` (a ring) while rotating by the
+   absolute position, which is what a sliding window means.
+
+### The measured curve (prefill + 8 decode tokens)
+
+| context | prefill | decode |
+| --- | --- | --- |
+| 1,024 | 29.9 s | **31.8 tok/s** |
+| 4,096 | 119.3 s | **27.6 tok/s** |
+| 5,224 | 156.6 s | **22.8 tok/s** |
+
+Short prompts are unaffected: Tokyo / Rome, 26.7 cold and 33.3 warm.
+
+### The number this exposes
+
+**Prefill is token-serial -- ~34 tok/s.** A 4,096-token prompt takes two minutes before the
+first output token. The programs take one position per call by construction, so batching
+prefill means rebuilding them with a sequence dimension. That is the largest remaining
+speed item, and it is bigger than anything on the decode path.

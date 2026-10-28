@@ -115,11 +115,14 @@ class Runtime:
                         session.hists[index] = arr
             else:
                 slide = kind == 'sliding_attention'
+                # the rotation is by ABSOLUTE position, so the tables must cover the whole
+                # context; the sliding cache itself is a ring, so the write slot wraps
                 cos = self.rope['slide_cos' if slide else 'full_cos'][session.position]
                 sin = self.rope['slide_sin' if slide else 'full_sin'][session.position]
+                slot = session.position % self.slide_rows if slide else session.position
                 out = program.predict(
                     {'in0': hidden,
-                     'in1': np.array([session.position], np.int32),
+                     'in1': np.array([slot], np.int32),
                      'in2': cos.reshape(D),
                      'in3': sin.reshape(D),
                      'in4': self.mask(session, kind, session.position)},
