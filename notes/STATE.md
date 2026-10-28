@@ -1041,33 +1041,16 @@ In-situ profile of one decode step (median of 10, LUT6):
 | 6 full-attention layers | 16.25 |
 | 5 sliding-attention layers | 3.78 |
 | final norm + **LM head** | **11.42** |
-## ROUND 38: the head on the engine -- 21.5 -> 24.5 tok/s
+## ROUND 39: published the split head and corrected every figure
 
-The 11.4 ms head was the largest single cost and it was on the CPU because Core ML will
-not place a 128,000-way matmul on the engine whole (1 op on ANE, 6 unassigned). Splitting
-it into row chunks fixes the placement:
+HuggingFace now carries **92 files, 2.16 GB**, including `lm_head_a.mlpackage` and
+`lm_head_b.mlpackage` (2 x 64,000 rows, both operations on the engine). The card and the
+README were updated to the measured numbers rather than left at the old ones:
 
-| split | total dispatch | placement of a chunk |
-|---|---|---|
-| 1 x 128,000 (shipped) | 2.6 ms standalone, **11.4 ms in place** | 1 engine op, 6 unassigned |
-| **2 x 64,000** | **3.03 ms** | **2 engine ops** |
-| 4 x 32,000 | 3.19 ms | 2 engine ops |
-| 8 x 16,000 | 4.68 ms | 2 engine ops |
+* 21.1/21.5 tok/s -> **24.4/24.5 tok/s**
+* 0.648 s -> **0.49 s** to first token
+* the per-token budget now reads ~41 ms, with the head at ~3 ms instead of 11.4 ms
 
-Two chunks is the sweet spot, and wired into the runtime (concatenating the logits) the
-engine measures:
-
-| | before | after |
-|---|---|---|
-| cold decode | 21.1 tok/s | **24.4 tok/s** |
-| warm decode | 21.5 tok/s | **24.5 tok/s** |
-| warm first token | 0.505 s | **0.488 s** |
-| answers | Tokyo / Rome | **Tokyo / Rome** |
-
-So the speed clause now stands at **24.4-24.5 tok/s at short context**, 16 % up, from
-two changes that both came out of measurement rather than assumption: palettisation
-(16.3 -> 21.1) and head placement (21.1 -> 24.5).
-
-What is left between 24.5 and 30 is 6.1 ms per token: ~16.2 ms of attention that is
-projection-dominated and ~3 ms of head. Neither has an obvious next win; the two
-remaining ideas (cache sharding, head on a wider split) were both measured and rejected.
+Leaving a published card claiming a lower number than the code achieves is its own kind
+of inaccuracy, so this round was mostly bookkeeping -- replacing stale figures with
+measured ones in the three places people actually read (card, README, notes).
