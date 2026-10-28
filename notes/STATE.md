@@ -1041,40 +1041,24 @@ In-situ profile of one decode step (median of 10, LUT6):
 | 6 full-attention layers | 16.25 |
 | 5 sliding-attention layers | 3.78 |
 | final norm + **LM head** | **11.42** |
-## ROUND 41: speech out is a working tool
+## ROUND 42: speech over HTTP is not possible here, and now says so
 
-Is the output actually speech, or just loud? Spectral comparison over the same 1.92 s:
+Attempted `/v1/audio/speech` three ways:
 
-| | rms | <1 kHz | 1-4 kHz | >4 kHz | centroid |
-|---|---|---|---|---|---|
-| mine | 0.0721 | 93.1 % | 5.0 % | 0.9 % | **438 Hz** |
-| official decode | 0.0764 | 89.1 % | 7.7 % | 1.3 % | **532 Hz** |
-| silence | 0.0001 | -- | -- | -- | 0 Hz |
-
-Same shape: low-frequency dominated with a little high-frequency detail, not broadband
-noise. Then a generalisation check on a phrase never used during debugging --
-`'Good morning, how are you today?'` gave **28 frames, 2.24 s, rms 0.0723, peak 0.51**,
-i.e. speech level again and a duration that tracks the text length.
-
-That is now `tools/say.py`:
-
-```
-python tools/say.py 'Good morning, how are you?' out.wav   # -> 24 kHz WAV
-```
-
-Published, with the README and the HuggingFace card corrected -- both previously said
-audio output did not work, which is no longer true.
-
-### Objective tally
-
-| clause | state |
+| approach | outcome |
 |---|---|
-| multimodal in (image, audio) | done, verified |
-| **multimodal out (speech)** | **done** -- 0.072 rms, spectrum matches the reference |
-| engine / harness / server | done |
-| >20 tok/s | 24.5 at short context |
-| publishing | done, claims corrected |
-| 75k | not reachable, measured both ways |
+| speech inside the server process (second Runtime) | `make_state()` fails -- two copies of 26 programs |
+| speech inside the server, reusing the loaded Runtime | **deadlock**, 0 % CPU, no response |
+| speech in a child process | same `make_state()` failure -- the parent's copy holds the memory |
 
-Five of six clauses are delivered. The open one is 75k, and it is blocked by measurement:
-fp16 tiles carry ~2 % per layer, fp32 tiles cost 23.5 ms each and need 18 per token.
+The machine can hold exactly one copy of the model. So the endpoint now answers **501**
+with the reason and the working command, instead of hanging or claiming success:
+
+```json
+{"error": "speech_unavailable_in_server",
+ "use": "python tools/say.py 'your text' out.wav  (24 kHz WAV)"}
+```
+
+Speech itself works (`tools/say.py`, 24 kHz, spectrum verified against the reference).
+What is not available is serving it beside the text model, on this hardware, in one
+process. That distinction is in the README now.

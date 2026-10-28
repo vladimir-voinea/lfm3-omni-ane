@@ -78,6 +78,10 @@ python tools/lfm3_serve.py                        # OpenAI-compatible on :8010
 python tools/vision_beach.py                      # caption a photo
 python tools/audio_chat.py                        # transcribe a WAV
 python tools/say.py 'Good morning, how are you?' out.wav   # speech out (24 kHz)
+#
+# speech is a CLI path, not an HTTP endpoint: the server already holds all 26 programs and
+# a second copy in the same process (or a child) fails make_state() on this machine, so
+# /v1/audio/speech answers 501 with this instruction rather than pretending
 ```
 
 Requires an Apple-silicon Mac, `coremltools` (tested 8.x), and a Python with

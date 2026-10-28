@@ -19,6 +19,27 @@ from lfm3_engine import Engine  # noqa: E402
 MODEL_ID = 'lfm3-omni-2b-ane'
 ENGINE = None
 ENGINE_LOCK = threading.Lock()
+SPEECH_LOCK = threading.Lock()
+
+
+def say(text, max_frames=48):
+    """Speech runs in its own process.  Loading the depth decoder and codec beside the 26
+    resident programs deadlocked the server, and a child process cannot leak that into the
+    serving path."""
+    import subprocess
+    import tempfile
+
+    handle = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
+    path = handle.name
+    handle.close()
+    result = subprocess.run(
+        [sys.executable, '/Users/vladimir/dev/lfm3-ane/tools/say.py',
+         text, path, str(max_frames)],
+        capture_output=True, timeout=1800)
+    if result.returncode:
+        raise RuntimeError(result.stderr.decode()[-300:])
+    with open(path, 'rb') as reader:
+        return reader.read()
 
 
 def engine() -> Engine:
@@ -68,9 +89,39 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(('%x\r\n' % len(data)).encode() + data + b'\r\n')
         self.wfile.flush()
 
+    def _speech(self, request):
+        """OpenAI-style text-to-speech: returns a 24 kHz mono WAV."""
+        import wave
+        from io import BytesIO
+
+        import numpy as np
+
+        text = (request.get('input') or '').strip()
+        if not text:
+            return self._json({'error': 'input is required'}, 400)
+        speed_frames = int(request.get('max_frames') or 48)
+        with SPEECH_LOCK:
+            try:
+                body = say(text, speed_frames)
+            except RuntimeError as error:
+                # the engine already holds all 26 programs; a child process cannot load a
+                # second copy on this machine (make_state fails), so speech stays a CLI path
+                return self._json({
+                    'error': 'speech_unavailable_in_server',
+                    'detail': str(error)[-200:],
+                    'use': "python tools/say.py 'your text' out.wav  (24 kHz WAV)"}, 501)
+        self.send_response(200)
+        self.send_header('Content-Type', 'audio/wav')
+        self.send_header('Content-Length', str(len(body)))
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_POST(self):
         length = int(self.headers.get('Content-Length', '0'))
         request = json.loads(self.rfile.read(length) or b'{}')
+        if self.path.startswith('/v1/audio/speech'):
+            return self._speech(request)
         if not self.path.startswith('/v1/chat/completions'):
             return self._json({'error': 'not found'}, 404)
 

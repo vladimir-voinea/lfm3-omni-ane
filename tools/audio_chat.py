@@ -1,5 +1,6 @@
 # Audio in, end to end: real speech -> my mel -> my encoder -> projector -> text model.
 import json
+import os
 import sys
 import wave
 
@@ -14,7 +15,7 @@ import audio_ref
 from lfm3_runtime import Runtime
 from mel_front import log_mel
 
-ANE = '/Users/vladimir/dev/lfm3-ane/model-28k'
+ANE = os.environ.get('LFM3_ANE', '/Users/vladimir/dev/lfm3-ane/model-28k')
 EOS = 124900
 
 

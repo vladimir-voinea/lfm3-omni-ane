@@ -48,6 +48,12 @@ class Runtime:
             self.stateful.append(kind != 'conv')
         self.norm = ct.models.MLModel(os.path.join(model_dir, 'final_norm.mlpackage'),
                                       compute_units=ct.ComputeUnit.CPU_AND_NE)
+        # a single 128,000-way matmul is not placed on the engine; two chunks of 64,000 are
+        parts = [n for n in ('lm_head_a.mlpackage', 'lm_head_b.mlpackage')
+                 if os.path.exists(os.path.join(model_dir, n))]
+        self.head_parts = [
+            ct.models.MLModel(os.path.join(model_dir, n), compute_units=ct.ComputeUnit.CPU_AND_NE)
+            for n in parts] if os.environ.get('LFM3_HEAD_PARTS', '1') == '1' and len(parts) == 2 else []
         head_name = os.environ.get('LFM3_HEAD', 'lm_head.mlpackage')
         self.head = ct.models.MLModel(os.path.join(model_dir, head_name),
                                       compute_units=ct.ComputeUnit.CPU_AND_NE)
@@ -108,5 +114,11 @@ class Runtime:
             self._run_position(session, np.asarray(self.emb[int(token)], np.float16).reshape(1, H, 1, 1))
         logits = session.hidden
         normed = self.norm.predict({'in0': logits})
-        out = self.head.predict({'in0': np.asarray(list(normed.values())[0], np.float16)})
+        ready = np.asarray(list(normed.values())[0], np.float16)
+        if self.head_parts:
+            out = {'logits': np.concatenate([
+                np.asarray(list(part.predict({'in0': ready}).values())[0]).reshape(-1)
+                for part in self.head_parts])}
+        else:
+            out = self.head.predict({'in0': ready})
         return np.asarray(list(out.values())[0]).reshape(-1)

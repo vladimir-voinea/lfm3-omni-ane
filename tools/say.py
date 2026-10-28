@@ -40,13 +40,15 @@ def load_codec():
     return weights
 
 
-def say(text, consonance_frames=48):
+def say(text, max_frames=48, runtime=None, depth=None, codec=None):
     tokenizer = Tokenizer.from_file(os.path.join(MODEL, 'tokenizer.json'))
     prompt = ('<|im_start|>user\n' + text + '<|im_end|>\n<|im_start|>assistant\n<|audio_start|>')
     ids = tokenizer.encode(prompt).ids          # no BOS: the processor does not add one
-    runtime = Runtime(ANE)
-    depth = load_depth()
-    codec = load_codec()
+    # a caller that already holds a loaded runtime must pass it: the 26 programs are large
+    # enough that a second copy fails to make state on this machine
+    runtime = runtime or Runtime(ANE)
+    depth = depth if depth is not None else load_depth()
+    codec = codec if codec is not None else load_codec()
     session = runtime.new_session()
     runtime.step(session, ids)
     # the audio feedback table is the codebook embedding, not the text embedding
@@ -54,7 +56,7 @@ def say(text, consonance_frames=48):
         book = handle.get_tensor('model.codebook_embedding.weight').float()
     torch.manual_seed(0)
     frames = []
-    for _ in range(consonance_frames):
+    for _ in range(max_frames):
         normed = runtime.norm.predict({'in0': session.hidden})
         hidden = torch.from_numpy(np.asarray(list(normed.values())[0], np.float16)
                                   .reshape(-1).astype(np.float32))
@@ -73,7 +75,8 @@ def say(text, consonance_frames=48):
 if __name__ == '__main__':
     text = sys.argv[1] if len(sys.argv) > 1 else 'Say hello in a friendly voice.'
     out = sys.argv[2] if len(sys.argv) > 2 else '/tmp/speech_out.wav'
-    samples, frames = say(text)
+    limit = int(sys.argv[3]) if len(sys.argv) > 3 else 48
+    samples, frames = say(text, limit)
     data = (samples * 32767).astype(np.int16)
     with wave.open(out, 'wb') as handle:
         handle.setnchannels(1)
