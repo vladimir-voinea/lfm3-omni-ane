@@ -1041,38 +1041,21 @@ In-situ profile of one decode step (median of 10, LUT6):
 | 6 full-attention layers | 16.25 |
 | 5 sliding-attention layers | 3.78 |
 | final norm + **LM head** | **11.42** |
-## ROUND 57: the engine could not do more than 255 tokens, and the published model had it too
+## ROUND 58: the long-context fix is correct, not merely non-crashing
 
-Found while measuring the throughput curve: `IndexError: index 256 is out of bounds for axis
-0 with size 256`. The sliding-attention programs write their cache at the **absolute**
-position into a **256-row** buffer, and the sliding RoPE table only had 256 entries. So any
-prompt past 255 tokens crashed the engine.
+A crash fix that silently corrupts attention is worse than the crash, so: needle test. A
+fact is planted at the start of the prompt and asked for at the end.
 
-This never showed up because every previous test used a short prompt, and the long-context
-work went through the separate tiled check scripts rather than the engine. **The published
-model shared the bug**, so anyone downloading it would have hit this on their first long
-message.
-
-Fixed in two places, neither needing a rebuild:
-
-1. `rope.npz` regenerated with **28,672** sliding rows (the same generator reproduces the old
-   tables to 2.4e-4, so the convention is unchanged) -- uploaded to HuggingFace.
-2. the runtime writes sliding caches at `position % 256` (a ring) while rotating by the
-   absolute position, which is what a sliding window means.
-
-### The measured curve (prefill + 8 decode tokens)
-
-| context | prefill | decode |
+| prompt tokens | answer | wall time |
 | --- | --- | --- |
-| 1,024 | 29.9 s | **31.8 tok/s** |
-| 4,096 | 119.3 s | **27.6 tok/s** |
-| 5,224 | 156.6 s | **22.8 tok/s** |
+| 289 | **PLATYPUS-42** | 8.8 s |
+| 1,589 | **PLATYPUS-42** | 45.7 s |
+| 5,229 | **PLATYPUS-42** | 149.1 s |
 
-Short prompts are unaffected: Tokyo / Rome, 26.7 cold and 33.3 warm.
+Retrieval survives across the whole shipped window, which means the ring-buffered sliding
+caches and the absolute-position rotation are wired correctly -- not just that the process
+stopped raising.
 
-### The number this exposes
-
-**Prefill is token-serial -- ~34 tok/s.** A 4,096-token prompt takes two minutes before the
-first output token. The programs take one position per call by construction, so batching
-prefill means rebuilding them with a sequence dimension. That is the largest remaining
-speed item, and it is bigger than anything on the decode path.
+The wall times also show where the cost sits: 5,229 tokens of prompt costs 149 s, and
+almost all of it is **prefill at ~35 tok/s**. Decode after that is still 22-28 tok/s. So a
+long chat turn is dominated by reading the prompt, not by answering.
