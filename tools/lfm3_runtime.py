@@ -8,11 +8,26 @@ import os
 import numpy as np
 import coremltools as ct
 
-# Keep Core ML's compiled caches on disk, not in the RAM-backed temp directory: each
-# program load writes an .mlmodelc that would otherwise sit in memory.
+# Each load asks Core ML to compile the program, and it leaves an .mlmodelc behind in the
+# user temp directory. A few hundred loads was tens of gigabytes, and TMPDIR does not
+# redirect it, so the runtime deletes whatever it creates.
 _CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'disk-tmp')
 os.makedirs(_CACHE_DIR, exist_ok=True)
 os.environ['TMPDIR'] = _CACHE_DIR
+
+import atexit
+import glob
+import shutil
+import tempfile as _tempfile
+
+
+def _compiled_dirs():
+    return set(glob.glob(os.path.join(_tempfile.gettempdir(), '*.mlmodelc')))
+
+
+def _clean_compiled(before):
+    for path in _compiled_dirs() - before:
+        shutil.rmtree(path, ignore_errors=True)
 
 D, H, NKV = 128, 2048, 4
 
@@ -35,6 +50,8 @@ class Session:
 class Runtime:
     def __init__(self, model_dir: str, full_rows: int = 28672, slide_rows: int = 256):
         self.dir = model_dir
+        _before = _compiled_dirs()
+        atexit.register(_clean_compiled, _before)
         self.layer_types = json.load(open(os.path.join(model_dir, 'layer_types.json')))
         rope = np.load(os.path.join(model_dir, 'rope.npz'))
         self.rope = {k: rope[k] for k in ('full_cos', 'full_sin', 'slide_cos', 'slide_sin')}

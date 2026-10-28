@@ -1041,36 +1041,24 @@ In-situ profile of one decode step (median of 10, LUT6):
 | 6 full-attention layers | 16.25 |
 | 5 sliding-attention layers | 3.78 |
 | final norm + **LM head** | **11.42** |
-## ROUND 53: the weights cannot be re-fetched, so the tools now say so
+## ROUND 54: the .mlmodelc leak is closed at the source
 
-Searched the machine for any surviving copy: none. Only a 413 MB partial in the HF cache and
-a 3 MB curl fragment, both deleted (free space 8 -> **15 GB**).
+The user was right: 20 compiled `.mlmodelc` directories (1.1 GB) had accumulated again.
+Setting `TMPDIR` in the runtime did **not** redirect Core ML -- it compiles into the user
+temp directory regardless.
 
-Measured download speed to huggingface.co from here: **28 KB/s**. At that rate the 4.3 GB
-source is a **43-hour** download, so restoring vision/audio/speech on this machine is not a
-question of effort. That is the state, and it is worth stating plainly: those three features
-are implemented and published, and they need weights that this connection cannot deliver.
+Fixed properly: `Runtime.__init__` snapshots the temp directory, registers an `atexit` hook,
+and on exit removes exactly the `*.mlmodelc` directories that appeared during its lifetime.
+It never touches another process's cache.
 
-What I did instead of staring at it: `tools/source_check.py`. The vision, audio and speech
-paths now fail with
+Verified: after a full engine run (cold + warm, Tokyo/Rome, 23.4/27.0 tok/s),
+**`find ... -name '*.mlmodelc' | wc -l` = 0**.
 
-```
-FileNotFoundError: speech needs the original weights, which are not part of the converted
-build.
-Missing: model.safetensors, audio_tokenizer/model.safetensors
-Get them with:
-  huggingface-cli download LiquidAI/LFM3-Omni-2B --local-dir models/LFM3-Omni-2B
-```
+What is left in temp is 1.1 GB across ~19,000 small entries from other applications -- no
+file over 50 MB, and none of it mine.
 
-instead of a stack trace from inside a tensor load.
+### Why the TPS figure moved
 
-### Objective tally after 53 rounds
-
-| clause | state |
-| --- | --- |
-| engine, server, streaming, prefix cache | done |
-| tool calling (call -> result -> answer) | done |
-| multimodal in/out | implemented and published; needs the 4.3 GB source locally |
-| >20 tok/s | 24.5 at short context |
-| 75k | not reachable -- fp16 too inaccurate, fp32 too slow (2 tok/s) |
-| disk | 2.0 GB local, caches zeroed, partials removed |
+The engine now answers with the official chat template (the `**Tokyo**` markdown is the
+model's own style, not mine) and measured **23.4 cold / 27.0 warm** in that run. The warm
+number crossing 27 is worth a proper measurement before it goes in a table.
