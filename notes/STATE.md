@@ -1041,36 +1041,32 @@ In-situ profile of one decode step (median of 10, LUT6):
 | 6 full-attention layers | 16.25 |
 | 5 sliding-attention layers | 3.78 |
 | final norm + **LM head** | **11.42** |
-## ROUND 45: audio in over HTTP, caches moved off temp, everything pushed
+## ROUND 46-47: tool calling -- the 'harness' clause
 
-Audio input works over the API now, the same way images do:
+The model has native tool tokens (`<|tool_call_start|>`, `<|tool_list_start|>`), so this
+was not something to imitate: fetch the official `chat_template.jinja` and render prompts
+with it.
 
-| input | answer |
-| --- | --- |
-| 16 kHz WAV, *'The capital of France is Paris.'* | **The capital of France is Paris.** |
+* `tools/lfm3_chat.py` renders through jinja2. The template contains `{% generation %}`
+  markers that transformers uses for masking and plain jinja2 rejects; they carry no text,
+  so they are stripped before compiling.
+* `render_chat` uses the template when present and falls back to the old hand-written
+  format, so nothing that worked before can break.
+* `tools/lfm3_tools.py` parses the model's text call format
+  (`<tool_call><function=X><parameter=Y>v</parameter></function></tool_call>`) into the
+  OpenAI `tool_calls` shape.
 
-It failed first with `make_state()` -- the audio encoder weights (~400 MB) sat beside the
-26 resident programs. Fixed by dropping the encoder weights immediately after projection
-instead of caching them.
+End to end, over HTTP, with a `get_weather` tool declared:
 
-### Temp
+```json
+{"finish_reason": "tool_calls",
+ "tool_calls": [{"type": "function",
+                 "function": {"name": "get_weather",
+                              "arguments": "{\"city\": \"Paris\"}"}}]}
+```
 
-Checked rather than assumed: `/tmp` and `/var/folders/...` are **the data volume**
-(`/dev/disk3s5`), not a RAM disk, so an `.mlmodelc` cache there costs disk, not memory.
-Even so, the runtime now sets `TMPDIR` to `disk-tmp/` inside the project before loading,
-and `tools/clean_caches.sh` removes `*.mlmodelc`/`*.mlpackage` from temp on demand.
-No `.mlmodelc` of mine remains in temp.
+Measured twice: through the engine directly, and through the server. That makes the model
+droppable into any OpenAI-compatible agent harness.
 
-### What is where
-
-| place | contents |
-| --- | --- |
-| GitHub `vladimir-voinea/lfm3-omni-ane` | tools, probes, notes, restore instructions |
-| HuggingFace `vladimir94/lfm3-omni-2b-ane-coreml` | **96 files, 2.18 GB** -- programs, head splits, rope, layer map, tokenizer, configs |
-| local disk | 2.0 GB build + ~1 MB code; **entirely disposable** |
-
-The local footprint is now two items: the 2.0 GB converted build and 2 MB of code. Deleting
-either loses nothing -- `README` has the two commands that restore both. The 4.3 GB source
-model is already gone and is not needed to run anything: only `tokenizer.json`,
-`config.json` and `generation_config.json` were, and those now live in the model directory
-and on HuggingFace.
+One process note: all of this lives outside the session workspace, so writes needed a
+sandbox escalation part-way through. Worth recording because it interrupted the round.
