@@ -1041,29 +1041,33 @@ In-situ profile of one decode step (median of 10, LUT6):
 | 6 full-attention layers | 16.25 |
 | 5 sliding-attention layers | 3.78 |
 | final norm + **LM head** | **11.42** |
-| total | 46.3 (matches the 47 ms measured end to end) |
+## ROUND 32: published
 
-The head is 11.4 ms in place against 2.6 ms standalone, so I tried a 4-bit head
-(262 -> 131 MB): **21.3 tok/s, no gain**. The reason came from the compute plan:
+**GitHub** -- https://github.com/vladimir-voinea/lfm3-omni-ane (public): README with the
+measured tables and the limits, `tools/` (build, runtime, engine, server, vision, audio,
+codec, depth decoder, mel front end, palettisation), `probes/` (38 verification scripts)
+and `notes/STATE.md`. 1.2 MB.
 
-| program | ops on engine | unassigned |
-|---|---|---|
-| `lm_head` | **1** | **6** |
-| `layer10_full` | 95 | 155 |
+**HuggingFace** -- https://huggingface.co/vladimir94/lfm3-omni-2b-ane-coreml: **86 files,
+1.97 GB**, LUT6 programs + embedding table + rope tables + layer map, with a model card
+that declares `base_model: LiquidAI/LFM3-Omni-2B` and states it is a **quantized
+conversion** (not a merge, not a fine-tune) under the LFM Open License v1.0.
 
-The head is essentially not placed on the engine -- a 128,000-way matmul is not a shape
-the ANE will take whole. That also explains why shrinking its weights changed nothing:
-the cost is not the bytes it reads, it is where it runs.
+The card and the README carry the same limits as this log: 75k not usable, audio out not
+yet producing good speech, LM head on the CPU. Publishing the failures next to the wins
+is the point -- a reader who downloads this should not discover them by trying.
 
-Also settled: incremental masks 21.5 -> 21.5 tok/s (no gain), answers stayed correct.
+Operationally: the token came from dgx3 (`~/.cache/huggingface/token`), was read into a
+600-mode temp file, used, and deleted. It was never printed.
 
-### The honest speed position
+### What is left in the objective
 
-21.1-21.6 tok/s at short context against a 31.2 ms arithmetic floor and a 46 ms clock.
-The two real levers, both measured, both known-cost:
-
-* **full attention is 16.2 ms** of the token because each of six programs reads a
-  28,672-row tile even when it is almost entirely masked. Curing that is the same work
-  that would make 75k affordable.
-* **the head is 11.4 ms** because it runs on the CPU. Splitting it into engine-friendly
-  chunks is worth retrying now that weights are palettised.
+| clause | state |
+|---|---|
+| multimodal in (image, audio) | **done, verified** |
+| multimodal out (speech) | halves exact; generation loop wrong |
+| engine + harness + server | **done, verified** |
+| disk managed | done; 8 GB free, model dirs are 3.7 + 1.8 GB |
+| 75k context | not usable (2 % per layer) |
+| >20-30 tok/s | **21.1-21.6 at short context**; less when the cache fills |
+| publishing | **done** |
