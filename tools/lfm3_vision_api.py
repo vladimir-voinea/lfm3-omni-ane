@@ -18,6 +18,8 @@ def _load():
     # first attempt would otherwise be returned forever
     if 'tower' in _VISION:
         return _VISION
+    from source_check import require_source
+    require_source("image input")
     weights = {}
     with safe_open(P, framework='pt') as handle:
         for key in handle.keys():

@@ -30,6 +30,8 @@ LAYERS = ['conv', 'conv', 'attn', 'conv', 'attn', 'conv', 'attn', 'conv']
 
 
 def load_depth():
+    from source_check import require_source
+    require_source("speech")
     weights = {}
     with safe_open(depth_ref.P, framework='pt') as handle:
         for key in handle.keys():

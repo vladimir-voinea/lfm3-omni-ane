@@ -16,6 +16,8 @@ _AUDIO = {}
 def _load():
     if 'weights' in _AUDIO:
         return _AUDIO['weights']
+    from source_check import require_source
+    require_source("audio input")
     weights = {}
     with safe_open(audio_ref.P, framework='pt') as handle:
         for key in handle.keys():

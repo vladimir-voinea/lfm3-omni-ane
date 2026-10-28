@@ -1041,28 +1041,36 @@ In-situ profile of one decode step (median of 10, LUT6):
 | 6 full-attention layers | 16.25 |
 | 5 sliding-attention layers | 3.78 |
 | final norm + **LM head** | **11.42** |
-## ROUND 48: the agent loop closes, and an honest consequence of the disk cleanup
+## ROUND 53: the weights cannot be re-fetched, so the tools now say so
 
-Two turns through the engine, with a `get_weather` tool:
+Searched the machine for any surviving copy: none. Only a 413 MB partial in the HF cache and
+a 3 MB curl fragment, both deleted (free space 8 -> **15 GB**).
 
-1. the model emits `<tool_call><function=get_weather><parameter=city>Paris...`
-2. the harness feeds back a `tool` message; the official template renders it as
-   `<|im_start|>tool\n<tool_response>...</tool_response>`
-3. the model answers **'The current weather in Paris is 18°C with cloudy conditions.'**
+Measured download speed to huggingface.co from here: **28 KB/s**. At that rate the 4.3 GB
+source is a **43-hour** download, so restoring vision/audio/speech on this machine is not a
+question of effort. That is the state, and it is worth stating plainly: those three features
+are implemented and published, and they need weights that this connection cannot deliver.
 
-That is the whole loop an agent harness needs, verified rather than assumed.
+What I did instead of staring at it: `tools/source_check.py`. The vision, audio and speech
+paths now fail with
 
-### What the cleanup cost
+```
+FileNotFoundError: speech needs the original weights, which are not part of the converted
+build.
+Missing: model.safetensors, audio_tokenizer/model.safetensors
+Get them with:
+  huggingface-cli download LiquidAI/LFM3-Omni-2B --local-dir models/LFM3-Omni-2B
+```
 
-Deleting the 4.3 GB source model took the vision tower, the audio encoder, the depth
-decoder and the codec with it -- those four are still **torch fp32**, not Core ML, so they
-read the original safetensors. Local state today:
+instead of a stack trace from inside a tensor load.
 
-| path | works now |
-|---|---|
-| text, tool calling, server, streaming | **yes** (converted build only) |
-| image in, audio in, speech out | **no** -- needs the source weights |
+### Objective tally after 53 rounds
 
-Restoring them is one download, and it is documented in the README rather than left to be
-discovered. The real fix is converting those four towers to Core ML, which would remove the
-4.3 GB dependency and put them on the engine.
+| clause | state |
+| --- | --- |
+| engine, server, streaming, prefix cache | done |
+| tool calling (call -> result -> answer) | done |
+| multimodal in/out | implemented and published; needs the 4.3 GB source locally |
+| >20 tok/s | 24.5 at short context |
+| 75k | not reachable -- fp16 too inaccurate, fp32 too slow (2 tok/s) |
+| disk | 2.0 GB local, caches zeroed, partials removed |
