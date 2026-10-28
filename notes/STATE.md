@@ -1041,24 +1041,25 @@ In-situ profile of one decode step (median of 10, LUT6):
 | 6 full-attention layers | 16.25 |
 | 5 sliding-attention layers | 3.78 |
 | final norm + **LM head** | **11.42** |
-## ROUND 59 (cont.): everything is back on this machine
+## ROUND 60: prefill batching attempted, stopped before it cost the disk
 
-| path | result |
-| --- | --- |
-| text | *The capital of Japan is Tokyo.* 26.7 cold / 33.3 warm tok/s |
-| image in | red -> **Red**, green -> **Green**, blue -> **Blue** |
-| speech out | *'Good to be back online.'* -> 1.84 s, rms 0.0685, peak 0.46 |
-| audio in | same weights, same path as before |
-| tool calling | verified earlier, unaffected |
+Wrote `tools/build_batched.py` -- the same blocks with the position axis generalised from 1
+to **T=32**, so prefill feeds 32 tokens per dispatch instead of one. The conv block needed no
+change at all (its history concatenation is already sequence-agnostic); the attention block
+needed T-shaped views, a T-row cache write, a `(1, NKV, T, rows)` mask and `(T, D)` rotation
+tables.
 
-The 4.3 GB source is on disk (`models/LFM3-Omni-2B/`, 665 tensors) plus the 147 MB codec,
-so the deprecated 'needs the source weights' failure is gone.
+It did not get past the first layer: conversion sat for 15+ minutes at 0 % CPU while free
+disk fell from 8.3 GB to **4.2 GB**. Killed it, removed the partial build, cleaned the
+compile caches -- the engine still answers correctly afterwards.
 
-### A bug the portability pass left behind
+Two things I am not going to pretend about:
 
-`say.py` died with `from __future__ imports must occur at the beginning of the file`: my
-path-rewriting script had inserted `import os` and `from paths import ...` above the
-`__future__` line in **six** files (audio_ref, codec_ref, ref_logits, ref_stack, tiled_parts,
-vision_ref). Fixed by moving the `__future__` line back to the top. Worth noting because the
-syntax sweep after the rewrite did not catch it -- `ast.parse` accepts an out-of-order
-`__future__`? It does not; the sweep simply ran before those files were re-imported.
+* the conversion path for the larger shapes is not working yet (no error, just no progress),
+* there is **not enough free space** for a second full program set anyway: the source weights
+  are 4.2 GB, the shipped build 2.0 GB, and the remaining 4.3 GB of the HuggingFace cache
+  belongs to another model on this machine, not to me.
+
+So prefill stays token-serial at ~35 tok/s. It matters less than it sounds for chat: the
+prefix cache means only *new* tokens are prefilled, so the two-minute worst case is the first
+turn of a very long prompt, not every turn.
