@@ -11,7 +11,7 @@ from tokenizers import Tokenizer
 from run_model import Lfm3Ane
 
 MODEL = '/Users/vladimir/dev/lfm3-ane/models/LFM3-Omni-2B'
-ANE = '/Users/vladimir/dev/lfm3-ane/model-28k'
+ANE = '/Users/vladimir/dev/lfm3-ane/model-28k-lut6'
 
 
 def main():

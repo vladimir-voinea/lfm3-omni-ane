@@ -12,7 +12,7 @@ sys.path.insert(0, '/Users/vladimir/dev/lfm3-ane/tools')
 from lfm3_runtime import Runtime
 from vision_ref import Vision, projector, P
 
-ANE = '/Users/vladimir/dev/lfm3-ane/model-28k'
+ANE = '/Users/vladimir/dev/lfm3-ane/model-28k-lut6'
 EOS = 124900
 
 w = {}

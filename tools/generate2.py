@@ -9,7 +9,7 @@ sys.path.insert(0, '/Users/vladimir/dev/lfm3-ane/tools')
 from run_model import Lfm3Ane
 
 MODEL = '/Users/vladimir/dev/lfm3-ane/models/LFM3-Omni-2B'
-ANE = '/Users/vladimir/dev/lfm3-ane/model-28k'
+ANE = '/Users/vladimir/dev/lfm3-ane/model-28k-lut6'
 
 
 def generate(runtime, tok, ids, steps=8):

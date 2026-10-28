@@ -16,7 +16,7 @@ from vision_ref import Vision, projector, P
 
 from safetensors import safe_open
 
-ANE = '/Users/vladimir/dev/lfm3-ane/model-28k'
+ANE = '/Users/vladimir/dev/lfm3-ane/model-28k-lut6'
 IDS = {'im_start': 124899, 'im_end': 124900, 'vision_start': 125009,
        'vision_end': 125010, 'image': 125030}
 

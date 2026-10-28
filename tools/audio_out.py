@@ -15,7 +15,7 @@ import depth_ref
 from lfm3_runtime import Runtime
 
 P = depth_ref.P
-ANE = '/Users/vladimir/dev/lfm3-ane/model-28k'
+ANE = '/Users/vladimir/dev/lfm3-ane/model-28k-lut6'
 AUDIO_START = 125012
 EOS_AUDIO = 2016
 FRAMES = 24

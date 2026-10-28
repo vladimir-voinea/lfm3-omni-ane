@@ -16,7 +16,8 @@ from anemll.runtime.dory_sampling import Sampler, SamplingParams  # noqa: E402
 from lfm3_runtime import Runtime  # noqa: E402
 
 MODEL_DIR = os.environ.get('LFM3_MODEL', '/Users/vladimir/dev/lfm3-ane/models/LFM3-Omni-2B')
-ANE_DIR = os.environ.get('LFM3_ANE', '/Users/vladimir/dev/lfm3-ane/model-28k')
+ANE_DIR = os.environ.get('LFM3_ANE', '/Users/vladimir/dev/lfm3-ane/model-28k-lut6')
+IMAGE_TOKEN = 125030
 IM_END = 124900
 
 
@@ -63,29 +64,56 @@ class Engine:
         self.sessions.append(tracked)
         return tracked, prompt_tokens, False
 
-    def stream(self, messages, params: SamplingParams, max_tokens: int = 256):
+    def _decode(self, tracked, logits, params, max_tokens, first, reused, pending_len, prompt_len):
+        sampler = Sampler(params)
+        produced = []
+        decode_start = time.perf_counter()
+        while len(produced) < max_tokens:
+            token = sampler.next_token(logits, tracked.session.tokens)
+            if token == IM_END:
+                break
+            produced.append(token)
+            tracked.session.tokens.append(token)
+            yield token, {'first_token_seconds': first, 'prefix_reused': reused,
+                          'prefill_tokens': pending_len,
+                          'prompt_tokens': prompt_len,
+                          'decode_start': decode_start}
+            logits = self.runtime.step(tracked.session, [token])
+
+    def stream(self, messages, params: SamplingParams, max_tokens: int = 256, image_rows=None):
         prompt = render_chat(messages)
         prompt_tokens = [1] + self.tokenizer.encode(prompt).ids
         with self.lock:
+            if image_rows:
+                # an image cannot be reused by token prefix, so it starts a fresh session
+                # and the picture's vectors go straight into the residual stream where the
+                # <|image|> placeholder sits
+                tracked = Tracked(self.runtime.new_session())
+                session = tracked.session
+                at = prompt_tokens.index(IMAGE_TOKEN)
+                self.runtime.step(session, prompt_tokens[:at])
+                logits = None
+                for row in image_rows:
+                    logits = self.runtime.step_hidden(session, row)
+                session.tokens.extend(prompt_tokens[:at + 1])
+                started = time.perf_counter()
+                pending = prompt_tokens[at + 1:]
+                if pending:
+                    logits = self.runtime.step(session, pending)
+                session.tokens.extend(pending)
+                first = time.perf_counter() - started
+                for token, info in self._decode(tracked, logits, params, max_tokens, first,
+                                                False, len(pending), len(prompt_tokens)):
+                    yield token, info
+                return
             tracked, pending, reused = self._session_for(prompt_tokens)
             started = time.perf_counter()
             logits = self.runtime.step(tracked.session, pending) if pending else None
             tracked.session.tokens.extend(pending)
             first = time.perf_counter() - started
-            sampler = Sampler(params)
-            produced = []
-            decode_start = time.perf_counter()
-            while len(produced) < max_tokens:
-                token = sampler.next_token(logits, tracked.session.tokens)
-                if token == IM_END:
-                    break
-                produced.append(token)
-                tracked.session.tokens.append(token)
-                yield token, {'first_token_seconds': first, 'prefix_reused': reused,
-                              'prefill_tokens': len(pending),
-                              'prompt_tokens': len(prompt_tokens),
-                              'decode_start': decode_start}
-                logits = self.runtime.step(tracked.session, [token])
+            for token, info in self._decode(tracked, logits, params, max_tokens, first, reused,
+                                            len(pending), len(prompt_tokens)):
+                yield token, info
 
     def generate(self, messages, params: SamplingParams, max_tokens: int = 256):
         produced = []

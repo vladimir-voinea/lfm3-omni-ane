@@ -1041,24 +1041,36 @@ In-situ profile of one decode step (median of 10, LUT6):
 | 6 full-attention layers | 16.25 |
 | 5 sliding-attention layers | 3.78 |
 | final norm + **LM head** | **11.42** |
-## ROUND 42: speech over HTTP is not possible here, and now says so
+## ROUND 43: disk cleanup (user-reported full disk) and the image-over-API work
 
-Attempted `/v1/audio/speech` three ways:
+### Disk: the culprit was not the project
 
-| approach | outcome |
+`/private/var/folders/.../T` held **43 GB** of Core ML artefacts -- 1,038 compiled
+`*.mlmodelc` caches, one per program load over these weeks, plus conversion scratch. They
+are caches: Core ML recompiles on demand.
+
+| action | freed |
 |---|---|
-| speech inside the server process (second Runtime) | `make_state()` fails -- two copies of 26 programs |
-| speech inside the server, reusing the loaded Runtime | **deadlock**, 0 % CPU, no response |
-| speech in a child process | same `make_state()` failure -- the parent's copy holds the memory |
+| deleted `*.mlmodelc` caches in the system temp dir (1,038 dirs) | **7 GB** |
+| deleted /tmp scratch: refenv, codecpkg, every test .mlpackage, .npy, .wav | ~2.6 GB |
+| deleted the duplicate fp16 build `model-28k` (the shipped artefact is LUT6) | **3.7 GB** |
+| deleted the pip cache | 0.7 GB |
 
-The machine can hold exactly one copy of the model. So the endpoint now answers **501**
-with the reason and the working command, instead of hanging or claiming success:
+Free space went **12 GB -> 28 GB**, and the system temp dir from 43 GB to **814 MB**.
+Verified afterwards: the engine still answers Tokyo/Rome at **24.6/25.0 tok/s**, so no
+cache I removed was needed.
 
-```json
-{"error": "speech_unavailable_in_server",
- "use": "python tools/say.py 'your text' out.wav  (24 kHz WAV)"}
-```
+Tools that defaulted to the deleted fp16 build now default to `model-28k-lut6`;
+`build_model.py` and `palettize_all.py` still write `model-28k` because that is the
+intermediate they produce.
 
-Speech itself works (`tools/say.py`, 24 kHz, spectrum verified against the reference).
-What is not available is serving it beside the text model, on this hardware, in one
-process. That distinction is in the README now.
+### Image over the API
+
+Built and verified in pieces: a dependency-free PNG codec (round-trips exactly), a vision
+helper whose output matches the reference path at **cos 1.0** (49 rows), and an engine
+branch that splices image vectors at the `<|image|>` placeholder. The engine path answers
+**'Red'** for a red 224x224 image with the correct prompt.
+
+Not yet verified end to end through HTTP: my first API attempts returned 'Gray' for both
+a red and a green image, and I have not yet found why the server path differs from the
+engine path that works. Until that is resolved, image input over HTTP is unproven.

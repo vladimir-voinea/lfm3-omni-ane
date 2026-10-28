@@ -126,6 +126,23 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({'error': 'not found'}, 404)
 
         messages = request.get('messages') or []
+        image_rows = None
+        for message in messages:
+            content = message.get('content')
+            if isinstance(content, list):
+                text_parts, images = [], []
+                for part in content:
+                    if part.get('type') == 'text':
+                        text_parts.append(part.get('text') or '')
+                    elif part.get('type') == 'image_url':
+                        url = (part.get('image_url') or {}).get('url') or ''
+                        if url.startswith('data:'):
+                            images.append(url)
+                if images:
+                    from lfm3_vision_api import rows_from_data_uri
+                    image_rows = rows_from_data_uri(images[0])
+                    message['content'] = ('<|vision_start|><|image|><|vision_end|>'
+                                          + ' '.join(text_parts))
         stream = bool(request.get('stream'))
         max_tokens = int(request.get('max_tokens') or 256)
         params = SamplingParams(temperature=float(request.get('temperature', 0.0) or 0.0),
@@ -156,7 +173,8 @@ class Handler(BaseHTTPRequestHandler):
             produced = []
             meta = {}
             chunk_delay = 0.0
-            for token, info in engine().stream(messages, params, max_tokens=max_tokens):
+            for token, info in engine().stream(messages, params, max_tokens=max_tokens,
+                                               image_rows=image_rows):
                 meta.update(info)
                 produced.append(token)
                 piece = engine().tokenizer.decode([token])

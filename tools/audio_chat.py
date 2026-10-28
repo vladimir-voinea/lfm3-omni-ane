@@ -15,7 +15,7 @@ import audio_ref
 from lfm3_runtime import Runtime
 from mel_front import log_mel
 
-ANE = os.environ.get('LFM3_ANE', '/Users/vladimir/dev/lfm3-ane/model-28k')
+ANE = os.environ.get('LFM3_ANE', '/Users/vladimir/dev/lfm3-ane/model-28k-lut6')
 EOS = 124900
 
 
