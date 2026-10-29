@@ -1041,31 +1041,32 @@ In-situ profile of one decode step (median of 10, LUT6):
 | 6 full-attention layers | 16.25 |
 | 5 sliding-attention layers | 3.78 |
 | final norm + **LM head** | **11.42** |
-## GOAL 78k-ANE, ROUND 2: the tile math is exact, but the model does not match its builder
+## GOAL 78k-ANE, ROUND 3: correcting my own round-2 claim
 
-Good news first. The tile program is numerically exact. At position 0 the softmax over a
-single key returned **sum = 1.0 exactly** and a weighted V that matches V itself to
-**7.6e-06**, with all four query heads in a group agreeing -- that pins the output order, the
-grouped-query layout and the write slot.
+Round 2 said the repository does not reproduce the published model, on the strength of a
+relative difference of 0.93. That number came from `max|a-b| / max|b|`, which on a
+residual-dominated signal is decided by one outlier element. Measured properly:
 
-Then the composition failed, and chasing it turned up something bigger:
-
-| comparison | relative difference |
+| metric rebuilt vs shipped, }layer 2 | value |
 | --- | --- |
-| my three-program path vs shipped layer 2 | 0.9274 |
-| **layer 2 rebuilt from the same tensors with today's build_model.py** vs shipped | **0.9274** |
-| tile alone vs torch (single key) | 7.6e-06 |
+| correlation | **0.932** |
+| relative L2 | **36.3 %** |
+| rms | 0.1027 vs 0.1131 |
 
-The rebuild and my decomposition agree with each other and both disagree with the shipped
-program by the same amount. So the tensors are right, the tile is right, and **the code in the
-repository does not reproduce the model published on HuggingFace**.
+So the two are the same computation up to a real but moderate discrepancy -- **not** a
+different model. My round-2 sentence was too strong and I am withdrawing it.
 
-Tensors verified before drawing that conclusion: one tensor fetched fresh by byte range from
-HuggingFace matches the slice in my local span exactly (max abs difference **0.0**, both std
-0.02391), and the span file's size matches the header's offsets to the byte
-(2,305,999,872).
+What is established, all verified rather than assumed:
 
-That makes the discrepancy a code-vs-model drift, and it matters well beyond this goal: a
-rebuild from the published source does not reproduce the published weights. Finding it is the
-next thing to do, and it is a prerequisite for the tiled build anyway -- the tiled programs are
-only worth building once they reproduce the running model.
+* every weight checked matches a fresh byte-range fetch exactly (q_norm, w1, o_proj,
+  operator_norm: max abs difference **0.0**);
+* the builder is byte-identical to the first commit in the published repo;
+* palettisation accounts for **2.1 %** (fp16 vs LUT6 rebuild), so it is not the gap;
+* attention variants -- no qk-norm, no RoPE, no gate, scale 1.0 -- all leave the gap at
+  ~0.93 on the max metric, so the gap is not in the attention detail;
+* the `1 + w` norm convention is worse (24.8), so the norms are used as plain scales.
+
+A 36 % L2 difference with 0.93 correlation is the signature of one term being wired
+differently, not of a wholesale mismatch. Next: exercise the two-token case (which brings the
+mask and the cache write into play), and check whether the gap is uniform across the six
+layers.
