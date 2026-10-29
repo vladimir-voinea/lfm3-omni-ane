@@ -1041,26 +1041,30 @@ In-situ profile of one decode step (median of 10, LUT6):
 | 6 full-attention layers | 16.25 |
 | 5 sliding-attention layers | 3.78 |
 | final norm + **LM head** | **11.42** |
-## GOAL 78k-ANE, ROUND 5
+## GOAL 78k-ANE, ROUND 5 (cont): the shipped layer's weight list | the checkpoint exactly
 
-**The shipped graph matches AttnBlock structurally.** Reading the operation list out of
-`layer2_full.mlpackage`: 250 operations,
+Read out of `layer2_full.mlpackage`, the eight palettised tensors, in graph | order:
 
-* **8 convs** -- q, k, v, gate, o, w1, w3, w2, exactly the eight 1x1 projections the block has;
-* **8 `constexpr_lut_to_dense`** -- one palettised weight tensor per conv, same count;
-* **6 `pow` + 6 `reduce_mean`** -- the six RMS norms (pre, post, ffn_norm, ffn_post, q_norm,
-  k_norm);
-* mul/add/reshape for the rotation and the residual.
+| # | shipped shape | corresponds to | my tensor |
+| --- | --- | --- | --- |
+| 1 | 2048x2048 | q_proj | same |
+| 2 | 512x2048 | k_proj | same |
+| 3 | 512x2048 | v_proj | same |
+| 4 | 16x2048 | gate | same |
+| 5 | 2048x2048 | o_proj | same |
+| 6 | 7680x2048 | w1 | same |
+| 7 | 7680x2048 | w3 | same |
+| 8 | 2048x7680 | w2 | same |
 
-So the published program is the same *shape* of computation. The 30-40 % difference is
-numeric, living in the palettised weights or a constant -- not in a missing term.
+Every shape matches, and the op histogram (8 convs, 8 `constexpr_lut_to_dense`, 6 pow + 6
+reduce_mean) matches AttnBlock operation for operation. So the published program computes the
+same function with the same tensors, and the 30-40 % gap has to be in the *values* -- the
+6-bit LUTs -- or in a scalar constant.
 
-Extracting those weights to diff them against the checkpoint is where this stalls: the
-coremltools protobuf accessors for op input/output shapes (`multiArrayType`, then
-`tensorType.shape`) both raise `AttributeError` in this version, so the LUT-to-tensor mapping
-cannot be read out with the obvious API. That is tooling friction, not physics -- but it is
-the third round in a row lost to it.
+Where it stops: the LUT itself is stored as float16 in the package's weight blob, and reading
+it needs the blob offset plus an indices-unpacking pass. The protobuf navigation took four
+wrong turns to get this far (`op.type` / `tensorType` / `dims` / `d.constant.size`), which is
+where the round went.
 
-Also tried this round: filling the shipped 28,672-token cache to measure decode speed at the
-real limit. The run died with `ANEProgramProcessRequestDirect() Failed with status=0x2 ...
-Request cancelled`, so there is still no measured number at full context.
+Unrelated but attempted: measuring decode at the full 28,672-token cache died with
+`ANEProgramProcessRequestDirect() Failed with status=0x2 ... Request cancelled`.
