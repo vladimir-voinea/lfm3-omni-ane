@@ -78,6 +78,9 @@ python tools/palettize_all.py
 python tools/lfm3_engine.py                       # one prompt, prints tok/s
 python tools/lfm3_serve.py                        # OpenAI-compatible on :8010
 
+# 5. an agent loop: tool call -> tool result -> answer (no SDK needed)
+python tools/agent_demo.py
+
 # 5. images, audio in, and speech out
 python tools/vision_beach.py                      # caption a photo
 python tools/audio_chat.py                        # transcribe a WAV

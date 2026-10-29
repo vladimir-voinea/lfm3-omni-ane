@@ -1041,22 +1041,20 @@ In-situ profile of one decode step (median of 10, LUT6):
 | 6 full-attention layers | 16.25 |
 | 5 sliding-attention layers | 3.78 |
 | final norm + **LM head** | **11.42** |
-## ROUND 66: one command proves the stack, and it found a wrong README line
+## ROUND 67: an agent can drive it, and it is not just a claim
 
-`tools/smoke_test.py` starts its own server and exercises the whole surface:
+`tools/agent_demo.py` -- a full agent loop over the same HTTP surface, dependency-free:
 
 ```
-PASS  health            {'status': 'ok', 'context_length': 28672}
-PASS  text              Tokyo
-PASS  tool call         {'name': 'get_weather', 'arguments': '{"city": "Paris"}'}
-PASS  tool result used  '...The weather in Paris is 18 degrees and cloudy.'
-PASS  image in          Red
-PASS  audio in          Good to be back online.
+What is the weather in Paris?
+  tool -> get_weather({'city': 'Paris'})
+  answer (1 tool round(s)): The weather in Paris is 18C and cloudy.
+How much is 100 EUR in USD?
+  tool -> convert_currency({'amount': 100, 'from_currency': 'EUR', 'to_currency': 'USD'})
+  answer (1 tool round(s)): 100 EUR is approximately 108 USD, using a conversion rate of 1 EUR = 1.08 USD.
 ```
 
-The audio check is the nice one: it feeds the model the speech `say.py` produced and gets the
-same sentence back, so encoder, decoder and codec agree end to end.
-
-It also caught a claim that had gone stale: the README said `/v1/audio/speech` answers **501**.
-It answers **200, audio/wav, 49,964 bytes** with a valid RIFF header now -- the 501 was the
-endpoint refusing to load the codec back when the weights were missing.
+Two different tools, correct argument extraction including a float and two strings, and both
+answers use the tool's numbers rather than inventing them. That is the 'agent/harness' clause
+of the objective, demonstrated rather than asserted -- anything speaking the OpenAI protocol
+(a chat UI, an agent framework, a shell script) can drive this engine.
