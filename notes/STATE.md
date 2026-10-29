@@ -1041,33 +1041,12 @@ In-situ profile of one decode step (median of 10, LUT6):
 | 6 full-attention layers | 16.25 |
 | 5 sliding-attention layers | 3.78 |
 | final norm + **LM head** | **11.42** |
-## ROUND 63: the batched prefill works mechanically and is not worth having
+**Suspected cause, not yet tested:** the chunk mask is laid out *position-major*
+(`rows[step*4:step*4+4]` per position) while `q.view(1, NKV, T*4, D)` flattens the head axis
+before the position axis, so the mask rows are in the wrong order. If that is the whole
+story, fixing it makes the batched path correct; the 3.6x slowdown is separately explained by
+rebuilding a 7.3 MB mask per chunk per layer type, which can be built once per chunk and
+shared across the six full-attention layers.
 
-The earlier 'stall' was my own bug, not Core ML: `rms` reduced over the wrong axis, which
-broadcast `(1,2048,T,1)` into `(1,2048,T,2048)` and then traced a 33-million-element tensor.
-With the axis fixed, one batched layer traces in **1.9 s** and converts in **2.1 s**. All 24
-batched layers are built (`model-28k-b8`, T=8, LUT6-palletised, 2.7 GB).
-
-Then the measurement, same 128 tokens, two sessions:
-
-| | serial | batched |
-| --- | --- | --- |
-| time | **3.8 s** | 13.6 s (+3.6x slower) |
-| hidden state, relative difference | -- | **1.07** (i.e. different answers) |
-
-So the batched path is both wrong and slower, and it cannot be rescued by a cleverer
-handoff either: `MLState` exposes **no buffer access at all** (no attributes, not
-subscriptable), so the batched KV cache cannot be copied into the single-position programs.
-Running decode through the T=8 set instead would make every decode step 8x the work.
-
-**Default stays serial.** The batched path is kept behind `LFM3_BATCH=1` so the work is not
-lost, with a comment saying why it is off. Engine re-verified afterwards: 27.9 cold / 32.3
-warm, Tokyo and Rome.
-
-Three findings worth more than the feature:
-
-* the shape bug that masked as a conversion hang -- the lesson is to check tensor shapes
-  before believing a converter is slow,
-* `MLState` is opaque, which rules out the whole 'two program sets' family of designs,
-* a batched sequence axis is **slower** here, not faster: the wider mask input and the extra
-  Python-side mask construction outweigh the dispatch savings at T=8.
+Keep `model-28k-b8` until that is tested (2.7 GB, rebuildable in ~10 min with
+`LFM3_T=8 python tools/build_batched.py`).
