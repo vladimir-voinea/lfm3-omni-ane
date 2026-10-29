@@ -1041,26 +1041,23 @@ In-situ profile of one decode step (median of 10, LUT6):
 | 6 full-attention layers | 16.25 |
 | 5 sliding-attention layers | 3.78 |
 | final norm + **LM head** | **11.42** |
-## ROUND 64: batched prefill closed
+## ROUND 65: two things the README had wrong
 
-Fixed the mask ordering (head-major, matching `q.view(1, NKV, T*4, D)`) and hoisted the mask
-build to once per chunk instead of once per layer. Neither helped:
+1. **Audio output was still listed as broken.** It has been working since the BOS fix --
+   verified again this session: *'Good to be back online.'* -> 1.84 s, rms 0.0685, peak 0.46
+   against the official rms 0.076. The README undersold the work; corrected.
+2. **The 75k explanation was incomplete.** It only cited the precision measurement. The
+   structural reasons matter as much:
 
-| | serial | batched |
-| --- | --- | --- |
-| 128 tokens | 3.7 s | **13.4 s** |
-| hidden state, relative difference | -- | **1.17** |
+   * one exact 28,672-row cache is **58.7 MB** per full-attention layer, and 32,768 rows
+     already fails to plan -- a 75k window cannot be one state;
+   * tiling to 19 tiles per layer means **114 programs**, each carrying its own copy of the
+     same attention weights (Core ML cannot share them across programs): ~**2.8 GB** of
+     duplication, plus 108 extra dispatches per token.
 
-Building the mask once per chunk changed 13.6 s to 13.4 s, so the cost is in the dispatches,
-not the mask. A chunk of 8 costs ~840 ms against ~232 ms for eight serial steps -- the shape
-of a CPU-bound run, which fits the earlier attribution problem: `(1, NKV, T*4, rows)`
-attention over a T-row cache write is not a pattern the engine takes.
+   So 75k fails on precision, on state size **and** on dispatch count, independently. Any one
+   of them would be enough.
 
-Combined with the two structural blockers -- the answer is wrong and `MLState` will not let
-the cache cross into the single-position programs -- this is not worth another round. Build
-deleted (2.7 GB reclaimed), builder kept (`LFM3_T=8 python tools/build_batched.py`), path
-still behind `LFM3_BATCH=1`.
-
-**Prefill stays token-serial at ~35 tok/s. That is the honest limit of this design**, and any
-future attempt needs a program whose sequence axis is part of the ANE-friendly shape from the
-start, not bolted on.
+Worth noting the correction inside my own notes: the 36.6 MiB state figure I had been quoting
+was wrong -- the shipped 58.7 MB caches work, so the real wall is the 32,768-row planning
+limit, not a 36 MiB ceiling.

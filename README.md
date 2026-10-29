@@ -173,12 +173,22 @@ The runtime also sets `TMPDIR` to `disk-tmp/` inside the project before loading 
 
 ## Limits, stated plainly
 
-* **75k context is not reachable.** Measured both ways: fp16 tiles cost ~2 % per layer
-  (compounds across 24 layers); an fp32 tile of the same size is exact but Core ML puts it
-  on the CPU at **23.5 ms** each, and 75k needs 18 of them per token -- about **2 tok/s**.
-  The shipping configuration is the exact single 28,672-token cache.
-* **Audio output does not yet produce good speech.** Both halves are numerically exact; the
-  generation loop produces quiet frames, so the sampler is still being diagnosed.
+* **75k context is not reachable, for three independent reasons.** Measured, not assumed:
+  * *precision*: fp16 tiles cost ~2 % per layer and compound across 24 layers; an fp32 tile
+    is exact but Core ML puts it on the CPU at **23.5 ms**, and 75k needs 18 of them per
+    token -- about **2 tok/s**;
+  * *state*: one exact 28,672-row cache is 58.7 MB per full-attention layer; 32,768 rows
+    already fails to plan, so a 75k window cannot live in a single state;
+  * *tiling cost*: splitting the window into 19 tiles per layer needs **114 programs**, each
+    carrying its own copy of the same attention weights (Core ML cannot share weights across
+    programs) -- roughly 2.8 GB of duplicated weights, plus 108 extra dispatches per token.
+
+  The shipping configuration is the exact single 28,672-token cache, which is where the
+  hardware stops cooperating.
+* **Audio output works, within its range.** Speech is generated on the engine end to end:
+  *"Good to be back online."* renders 1.84 s at rms **0.0685**, peak 0.46, against the
+  official pipeline's rms 0.076. The cause of an earlier silence was a BOS token the model
+  never expects, not the sampler.
 * **The LM head runs on the CPU**, costing 11.4 ms per token.
 * This is a research conversion, not a product. Expect to read the notes.
 
