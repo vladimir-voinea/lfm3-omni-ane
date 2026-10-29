@@ -1041,40 +1041,26 @@ In-situ profile of one decode step (median of 10, LUT6):
 | 6 full-attention layers | 16.25 |
 | 5 sliding-attention layers | 3.78 |
 | final norm + **LM head** | **11.42** |
-## GOAL 78k-ANE, ROUND 4: the pieces are right, the reference is unreachable
+## GOAL 78k-ANE, ROUND 5
 
-End-to-end trace, same tokens, tiled versus shipped, hidden state after every layer:
+**The shipped graph matches AttnBlock structurally.** Reading the operation list out of
+`layer2_full.mlpackage`: 250 operations,
 
-```
-{'index': 0, 'layer': 0, 'rel_pct': 0.0}     <- conv layers identical
-{'index': 1, 'layer': 1, 'rel_pct': 0.0}
-{'index': 2, 'layer': 2, 'rel_pct': 76.27}   <- first full-attention layer
-```
+* **8 convs** -- q, k, v, gate, o, w1, w3, w2, exactly the eight 1x1 projections the block has;
+* **8 `constexpr_lut_to_dense`** -- one palettised weight tensor per conv, same count;
+* **6 `pow` + 6 `reduce_mean`** -- the six RMS norms (pre, post, ffn_norm, ffn_post, q_norm,
+  k_norm);
+* mul/add/reshape for the rotation and the residual.
 
-The first token has a one-token context, so attention is trivially v and the tile returns it
-exactly. Isolating the other two pieces against torch:
+So the published program is the same *shape* of computation. The 30-40 % difference is
+numeric, living in the palettised weights or a constant -- not in a missing term.
 
-| piece | rel L2 vs torch |
-| --- | --- |
-| projection: q | 1.53 % |
-| projection: k | 1.52 % |
-| projection: v | 1.33 % |
-| projection: gate | **0.037 %** |
-| output program (o_proj + MLP) | 1.68 % |
+Extracting those weights to diff them against the checkpoint is where this stalls: the
+coremltools protobuf accessors for op input/output shapes (`multiArrayType`, then
+`tensorType.shape`) both raise `AttributeError` in this version, so the LUT-to-tensor mapping
+cannot be read out with the obvious API. That is tooling friction, not physics -- but it is
+the third round in a row lost to it.
 
-Every piece I built is accurate to ~1.5 % of torch, and the tile itself is exact (7.6e-06).
-The composition therefore tracks torch -- and it is **torch's AttnBlock, rebuilt from verified
-weights with the repository's own code, that disagrees with the shipped program by 30-40 %**.
-
-Interface confirmed from the shipped program's own spec: in0 (1,2048,1,1), in1 (1,) int32,
-in2/in3 (128), in4 (1,4,1,28672) -- exactly what I feed it. Weights confirmed against fresh
-fetches (0.0 difference). Quantisation confirmed uniform (all layers 42 MB).
-
-Conclusion: the shipped programs embody a layer computation the repository cannot reproduce,
-and the shipped model is the only working reference. An exactly-equivalent tiled variant
-cannot be built from the repo as it stands.
-
-### And the speed target, independently
-
-Attention at 78k is **3.83 GFLOP/token**; this path measures **48-92 GFLOPS**; the other 18
-layers cost ~15 ms. That lands at **15-18 tok/s**, against a requirement of >20-30.
+Also tried this round: filling the shipped 28,672-token cache to measure decode speed at the
+real limit. The run died with `ANEProgramProcessRequestDirect() Failed with status=0x2 ...
+Request cancelled`, so there is still no measured number at full context.
