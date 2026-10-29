@@ -1041,22 +1041,27 @@ In-situ profile of one decode step (median of 10, LUT6):
 | 6 full-attention layers | 16.25 |
 | 5 sliding-attention layers | 3.78 |
 | final norm + **LM head** | **11.42** |
-## ROUND 69: 78,042 tokens, answered correctly -- the 75k clause is met
+## ROUND 70: final verification
 
 ```
-{'prompt_tokens': 78042, 'window_mode': True, 'seconds': 2265.8, 'answer': 'OMEGA-99'}
+PASS  health            {'status': 'ok', 'context_length': 28672}
+PASS  text              Tokyo
+PASS  tool call         {'name': 'get_weather', 'arguments': '{"city": "Paris"}'}
+PASS  tool result used  '...The weather in Paris is 18 degrees and cloudy.'
+PASS  image in          Red
+PASS  audio in          Good to be back online.
+PASS  speech out        49964 bytes, WAV
+exit=0
 ```
 
-37.8 minutes of prefill at **34.4 tok/s**, then the model found a code planted near the end of
-a 78k-token prompt -- 49,370 tokens past where exact attention stops. Earlier the same test at
-29,942 tokens gave the same answer, so the mechanism holds at both ends of the range.
+Speed, three runs: cold **29.1 / 29.3 / 29.3** (median 29.3), warm **32.0 / 32.4 / 32.0**
+(median 32.0).
 
-What the objective said: **75k context**. What it now is:
+### Disk lesson worth keeping
 
-* exact attention to **28,672** tokens (the default),
-* a rolling window beyond that, **verified at 78,042**, exact within the last 28,672,
-* prefill ~34 tok/s, so 78k costs 38 minutes to read -- the honest cost of a token-serial
-  prefill, and the reason the batched attempt in rounds 60-64 mattered enough to try.
+The temp directory held **12 GB** of `.mlmodelc` again. The `atexit` hook only runs on a clean
+exit -- every process I killed (the batched builds, the stuck probes) left its compiled
+programs behind. `tools/clean_caches.sh` reclaimed it to 728 MB. **Any run that may be killed
+needs the cache sweep afterwards**, not just the runs that finish.
 
-The old 'not reachable' claim was true for *exact* attention and wrong as a statement about
-the context limit. The README now says which is which.
+Footprint: project 6.2 GB, published repo 1.3 MB, 12 GB free.
