@@ -1041,12 +1041,26 @@ In-situ profile of one decode step (median of 10, LUT6):
 | 6 full-attention layers | 16.25 |
 | 5 sliding-attention layers | 3.78 |
 | final norm + **LM head** | **11.42** |
-**Suspected cause, not yet tested:** the chunk mask is laid out *position-major*
-(`rows[step*4:step*4+4]` per position) while `q.view(1, NKV, T*4, D)` flattens the head axis
-before the position axis, so the mask rows are in the wrong order. If that is the whole
-story, fixing it makes the batched path correct; the 3.6x slowdown is separately explained by
-rebuilding a 7.3 MB mask per chunk per layer type, which can be built once per chunk and
-shared across the six full-attention layers.
+## ROUND 64: batched prefill closed
 
-Keep `model-28k-b8` until that is tested (2.7 GB, rebuildable in ~10 min with
-`LFM3_T=8 python tools/build_batched.py`).
+Fixed the mask ordering (head-major, matching `q.view(1, NKV, T*4, D)`) and hoisted the mask
+build to once per chunk instead of once per layer. Neither helped:
+
+| | serial | batched |
+| --- | --- | --- |
+| 128 tokens | 3.7 s | **13.4 s** |
+| hidden state, relative difference | -- | **1.17** |
+
+Building the mask once per chunk changed 13.6 s to 13.4 s, so the cost is in the dispatches,
+not the mask. A chunk of 8 costs ~840 ms against ~232 ms for eight serial steps -- the shape
+of a CPU-bound run, which fits the earlier attribution problem: `(1, NKV, T*4, rows)`
+attention over a T-row cache write is not a pattern the engine takes.
+
+Combined with the two structural blockers -- the answer is wrong and `MLState` will not let
+the cache cross into the single-position programs -- this is not worth another round. Build
+deleted (2.7 GB reclaimed), builder kept (`LFM3_T=8 python tools/build_batched.py`), path
+still behind `LFM3_BATCH=1`.
+
+**Prefill stays token-serial at ~35 tok/s. That is the honest limit of this design**, and any
+future attempt needs a program whose sequence axis is part of the ANE-friendly shape from the
+start, not bolted on.

@@ -135,14 +135,20 @@ class Runtime:
         return True
 
     def _chunk_mask(self, kind, position, count):
-        """One row per (head, position), each revealing everything up to its own position."""
+        """Rows ordered as q.view(1, NKV, T*4, D) flattens them: head-major, position-minor.
+
+        Getting this backwards produced a plausible but wrong answer (relative difference 1.07
+        against the serial path), which is exactly the kind of bug a crash would have saved me
+        from.
+        """
         key = 'slide' if kind == 'sliding_attention' else 'full'
         mask = self.batch_masks[key]
         rows = mask.shape[-1]
         mask.fill(-1e4)
-        for step in range(count):
-            visible = min(position + step + 1, rows)
-            mask[:, :, step * 4:(step + 1) * 4, :visible] = 0
+        for head in range(4):
+            for step in range(count):
+                visible = min(position + step + 1, rows)
+                mask[:, :, head * count + step, :visible] = 0
         return mask
 
     def prefill_batch(self, session, token_ids):
@@ -165,6 +171,9 @@ class Runtime:
         for offset in range(0, count, T):
             hidden = np.ascontiguousarray(hidden_all[..., offset:offset + T, :])
             position = start + offset
+            # one mask per layer type per chunk, not one per layer: rebuilding the 28,672-wide
+            # array eleven times per chunk was most of the cost
+            chunk_masks = {}
             for index, kind in enumerate(self.layer_types):
                 program = self.batch_programs[index]
                 if kind == 'conv':
@@ -176,12 +185,14 @@ class Runtime:
                     sliding = kind == 'sliding_attention'
                     cos = self.rope['slide_cos' if sliding else 'full_cos'][position:position + T]
                     sin = self.rope['slide_sin' if sliding else 'full_sin'][position:position + T]
+                    if kind not in chunk_masks:
+                        chunk_masks[kind] = self._chunk_mask(kind, position, T)
                     out = program.predict(
                         {'in0': hidden,
                          'in1': np.array([position], np.int32),
                          'in2': cos.reshape(T, D),
                          'in3': sin.reshape(T, D),
-                         'in4': self._chunk_mask(kind, position, T)},
+                         'in4': chunk_masks[kind]},
                         state=session.batch_states[index])
                     hidden = np.asarray(list(out.values())[0])
             last = hidden
