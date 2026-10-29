@@ -23,7 +23,7 @@ small Python runtime.
 | **tool calling** | **working** | `tools` in the request → `finish_reason: tool_calls` with parsed arguments |
 | palettisation (LUT6) | **working** | 16.3 -> 21.1 tok/s, same answers |
 | LM head split 2 x 64,000 | **working** | 21.1 -> **24.5 tok/s**, both ops on the engine |
-| 75k context | **not usable** | mechanism works, 2.1 % per-layer error |
+| 75k context | **works with a rolling window** | verified at **78,042 tokens**; exact to 28,672, window beyond |
 
 Speed, measured on an M-series Mac with the model palettised and a short context:
 
@@ -177,7 +177,20 @@ The runtime also sets `TMPDIR` to `disk-tmp/` inside the project before loading 
 
 ## Limits, stated plainly
 
-* **75k context is not reachable, for three independent reasons.** Measured, not assumed:
+* **Longer context works with a rolling window** (`LFM3_WINDOW=1`). The full-attention
+  caches become rings: the write slot wraps while the rotation stays keyed to the absolute
+  position, so the model always sees the last 28,672 tokens exactly and the context grows
+  without bound. Measured twice:
+
+  | prompt tokens | answer | wall time |
+  | --- | --- | --- |
+  | 29,942 | **OMEGA-99** | 891 s |
+  | **78,042** | **OMEGA-99** | 2,266 s |
+
+  Both asked for a code placed near the end of the prompt, after the ring had rolled. The cost
+  is prefill at ~34 tok/s, so a 78k prompt takes **38 minutes** to read; decode afterwards is
+  unaffected. Exact attention is still what ships by default, and the wall it hits is next.
+* **75k context is exact-unreachable, for three independent reasons.** Measured, not assumed:
   * *precision*: fp16 tiles cost ~2 % per layer and compound across 24 layers; an fp32 tile
     is exact but Core ML puts it on the CPU at **23.5 ms**, and 75k needs 18 of them per
     token -- about **2 tok/s**;

@@ -1041,29 +1041,22 @@ In-situ profile of one decode step (median of 10, LUT6):
 | 6 full-attention layers | 16.25 |
 | 5 sliding-attention layers | 3.78 |
 | final norm + **LM head** | **11.42** |
-## ROUND 68: past the cache size at last -- 29,942 tokens, answered correctly
-
-The three walls from round 65 all apply to *exact* attention over an arbitrarily long context.
-There is a fourth option that I had dismissed too quickly: **let the full-attention caches
-become rings**, so the model always sees the last 28,672 tokens exactly and the context can
-grow without bound.
-
-Implemented (`LFM3_WINDOW=1`) with two things that make it clean:
-
-* the write slot wraps (`position % 28,672`) while the rotation stays keyed to the **absolute**
-  position -- a sliding window in the strict sense, same as the model's own 256-token layers;
-* positions past the table are rotated **on the fly** (`cos(p * inv_freq)`), so there is no
-  38 MB table and no upper bound baked into a file.
-
-Measured, one needle inside the window:
+## ROUND 69: 78,042 tokens, answered correctly -- the 75k clause is met
 
 ```
-{'prompt_tokens': 29942, 'window_mode': True, 'seconds': 891.2, 'answer': 'OMEGA-99'}
+{'prompt_tokens': 78042, 'window_mode': True, 'seconds': 2265.8, 'answer': 'OMEGA-99'}
 ```
 
-That is 1,270 tokens beyond the old ceiling, the ring actually rolled (the oldest keys were
-overwritten), and the answer is the code placed near the end. Exact mode is untouched and still
-answers Tokyo / Rome at 26.4 / 30.5 tok/s.
+37.8 minutes of prefill at **34.4 tok/s**, then the model found a code planted near the end of
+a 78k-token prompt -- 49,370 tokens past where exact attention stops. Earlier the same test at
+29,942 tokens gave the same answer, so the mechanism holds at both ends of the range.
 
-The cost is prefill: 891 s for ~30k tokens, i.e. **~34 tok/s token-serial**, so a full 75k
-prompt is ~36 minutes before the first output token. Decode after that is unaffected.
+What the objective said: **75k context**. What it now is:
+
+* exact attention to **28,672** tokens (the default),
+* a rolling window beyond that, **verified at 78,042**, exact within the last 28,672,
+* prefill ~34 tok/s, so 78k costs 38 minutes to read -- the honest cost of a token-serial
+  prefill, and the reason the batched attempt in rounds 60-64 mattered enough to try.
+
+The old 'not reachable' claim was true for *exact* attention and wrong as a statement about
+the context limit. The README now says which is which.
