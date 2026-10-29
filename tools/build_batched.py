@@ -14,11 +14,17 @@ from paths import SOURCE, PROJECT
 
 H, NH, NKV, D, K = 2048, 16, 4, 128, 7
 FULL_ROWS, SLIDE_ROWS = 28672, 256
-T = 32
+T = int(os.environ.get('LFM3_T', '8'))
 OUT = os.path.join(PROJECT, 'model-28k-b%d' % T)
 
 
 def rms(z, w, eps=1e-5):
+    """Channel-first normalisation: the hidden axis is dim 1, as in build_model."""
+    return z * torch.rsqrt(z.pow(2).mean(dim=1, keepdim=True) + eps) * w.view(1, -1, 1, 1)
+
+
+def rms_head(z, w, eps=1e-5):
+    """Per-head normalisation for q and k after the reshape: head dim is last."""
     return (z * torch.rsqrt(z.pow(2).mean(dim=-1, keepdim=True) + eps) * w.view(1, 1, 1, -1))
 
 
@@ -64,8 +70,11 @@ class SeqConv(torch.nn.Module):
         self.in_b.weight.data = w[0].view(H, H, 1, 1).clone()
         self.in_c.weight.data = w[1].view(H, H, 1, 1).clone()
         self.in_x.weight.data = w[2].view(H, H, 1, 1).clone()
-        self.dw = torch.nn.Conv2d(H, H, (1, K), groups=H, bias=False)
-        self.dw.weight.data = t['conv.conv.weight'].view(H, 1, 1, K).clone()
+        # the original single-position build parks the history in the W axis because the
+        # sequence axis has length 1; with T positions the window has to run along the
+        # sequence (dim 2) instead
+        self.dw = torch.nn.Conv2d(H, H, (K, 1), groups=H, bias=False)
+        self.dw.weight.data = t['conv.conv.weight'].view(H, 1, 1, K).permute(0, 1, 3, 2).contiguous().clone()
         self.out_proj = torch.nn.Conv2d(H, H, 1, bias=False)
         self.out_proj.weight.data = t['conv.out_proj.weight'].view(H, H, 1, 1).clone()
         self.mlp = Mlp(t)
@@ -73,8 +82,8 @@ class SeqConv(torch.nn.Module):
     def forward(self, x, hist):
         h = self.pre(x)
         gated = self.in_b(h) * self.in_x(h)
-        full = torch.cat([hist, gated], dim=3)
-        new_hist = torch.narrow(full, 3, 1, K - 1)
+        full = torch.cat([hist, gated], dim=2)          # (1, H, T + K - 1, 1)
+        new_hist = torch.narrow(full, 2, T, K - 1)
         y = self.out_proj(self.in_c(h) * self.dw(full))
         h = self.post(y) + x
         return self.ffn_post(self.mlp(self.ffn_norm(h))) + h, new_hist
@@ -108,8 +117,8 @@ class SeqAttn(torch.nn.Module):
         q = self.q_proj(h).view(1, NH, T, D)
         k = self.k_proj(h).view(1, NKV, T, D)
         v = self.v_proj(h).view(1, NKV, T, D)
-        q = rms(q, self.q_norm)
-        k = rms(k, self.k_norm)
+        q = rms_head(q, self.q_norm)
+        k = rms_head(k, self.k_norm)
         c, s = cos.view(1, 1, T, D), sin.view(1, 1, T, D)
         q = q * c + rotate_half(q) * s
         k = k * c + rotate_half(k) * s
@@ -117,6 +126,8 @@ class SeqAttn(torch.nn.Module):
         self.cache[NKV:2 * NKV, :, pos:pos + T, :] = v.view(NKV, 1, T, D)
         key = self.cache[0:NKV].view(1, NKV, self.rows, D).transpose(-1, -2)
         val = self.cache[NKV:2 * NKV].view(1, NKV, self.rows, D)
+        # the grouped-query trick flattens (head, position) into one axis, so the mask has to
+        # carry the same layout: each position's row repeated once per head in the group
         scores = torch.matmul(q.view(1, NKV, T * 4, D), key) * 0.0884 + mask
         attn = torch.matmul(torch.softmax(scores, dim=-1), val).reshape(1, NH, T, D)
         attn = attn * torch.sigmoid(self.gate(h)).view(1, NH, T, 1)
@@ -154,14 +165,14 @@ if __name__ == '__main__':
         if kind == 'conv':
             path = os.path.join(OUT, 'layer%d_conv.mlpackage' % i)
             if not os.path.exists(path):
-                save(SeqConv(tensors[i]), [(1, H, T, 1), (1, H, 1, K - 1)], [], path)
+                save(SeqConv(tensors[i]), [(1, H, T, 1), (1, H, K - 1, 1)], [], path)
         else:
             rows = SLIDE_ROWS if kind == 'sliding_attention' else FULL_ROWS
             tag = 'slide' if rows == SLIDE_ROWS else 'full'
             path = os.path.join(OUT, 'layer%d_%s.mlpackage' % (i, tag))
             if not os.path.exists(path):
                 save(SeqAttn(tensors[i], rows),
-                     [(1, H, T, 1), (1,), (T, D), (T, D), (1, NKV, T, rows)],
+                     [(1, H, T, 1), (1,), (T, D), (T, D), (1, NKV, T * 4, rows)],
                      [ct.StateType(name='cache', wrapped_type=ct.TensorType(
                          shape=(2 * NKV, 1, rows, D), dtype=np.float16))], path)
         print('built', i, kind, flush=True)

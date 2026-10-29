@@ -124,7 +124,17 @@ class Engine:
                 return
             tracked, pending, reused = self._session_for(prompt_tokens)
             started = time.perf_counter()
-            logits = self.runtime.step(tracked.session, pending) if pending else None
+            logits = None
+            if pending:
+                # The batched programs exist (LFM3_BATCH=1) but are not the default: they
+                # compute a different result from the serial path and run slower on this
+                # machine, and their KV cache cannot be handed to the single-position
+                # programs because MLState exposes no buffer access.
+                consumed = 0
+                if os.environ.get('LFM3_BATCH', '0') == '1':
+                    consumed = self.runtime.prefill_batch(tracked.session, pending)
+                rest = pending[consumed:]
+                logits = self.runtime.step(tracked.session, rest) if rest else None
             tracked.session.tokens.extend(pending)
             first = time.perf_counter() - started
             for token, info in self._decode(tracked, logits, params, max_tokens, first, reused,

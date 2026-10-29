@@ -1041,25 +1041,33 @@ In-situ profile of one decode step (median of 10, LUT6):
 | 6 full-attention layers | 16.25 |
 | 5 sliding-attention layers | 3.78 |
 | final norm + **LM head** | **11.42** |
-## ROUND 61: the batched build stalls at conversion, twice
+## ROUND 63: the batched prefill works mechanically and is not worth having
 
-Patched the builder to palettise each layer immediately (so only ~48 MB per layer is kept
-instead of a 3.7 GB fp16 set) -- that removes the disk objection, not the stall.
+The earlier 'stall' was my own bug, not Core ML: `rms` reduced over the wrong axis, which
+broadcast `(1,2048,T,1)` into `(1,2048,T,2048)` and then traced a 33-million-element tensor.
+With the axis fixed, one batched layer traces in **1.9 s** and converts in **2.1 s**. All 24
+batched layers are built (`model-28k-b8`, T=8, LUT6-palletised, 2.7 GB).
 
-Then probed a single layer: loading its tensors and `torch.jit.trace` at `(1, 2048, 32, 1)`
-did not finish inside 10 minutes, at 62 % free memory. Killed it. The conversion path for the
-wider shapes is stuck before it reaches Core ML at all, so this is a tracing/model problem,
-not ANE placement.
+Then the measurement, same 128 tokens, two sessions:
 
-Free disk also fell to **3.4 GB** during the attempt, which is its own reason not to keep
-retrying blindly.
+| | serial | batched |
+| --- | --- | --- |
+| time | **3.8 s** | 13.6 s (+3.6x slower) |
+| hidden state, relative difference | -- | **1.07** (i.e. different answers) |
 
-### What I would try next, narrowly
+So the batched path is both wrong and slower, and it cannot be rescued by a cleverer
+handoff either: `MLState` exposes **no buffer access at all** (no attributes, not
+subscriptable), so the batched KV cache cannot be copied into the single-position programs.
+Running decode through the T=8 set instead would make every decode step 8x the work.
 
-`T=8` instead of 32: the mask shrinks from 4x32x28,672 to 4x8x28,672 (58 MB -> 1.8 MB of
-input), and if the stall is the traced slice `cache[..., pos:pos+T, :]` growing, a smaller T
-will show it quickly. If T=8 traces in seconds, the batched path is alive and the question
-becomes picking the largest T that converts.
+**Default stays serial.** The batched path is kept behind `LFM3_BATCH=1` so the work is not
+lost, with a comment saying why it is off. Engine re-verified afterwards: 27.9 cold / 32.3
+warm, Tokyo and Rome.
 
-Until then, prefill stays token-serial (~35 tok/s) and every other path is unaffected: engine
-26.9 cold / 31.2 warm tok/s, Tokyo/Rome after the abort.
+Three findings worth more than the feature:
+
+* the shape bug that masked as a conversion hang -- the lesson is to check tensor shapes
+  before believing a converter is slow,
+* `MLState` is opaque, which rules out the whole 'two program sets' family of designs,
+* a batched sequence axis is **slower** here, not faster: the wider mask input and the extra
+  Python-side mask construction outweigh the dispatch savings at T=8.

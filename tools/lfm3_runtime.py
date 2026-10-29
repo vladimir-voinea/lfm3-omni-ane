@@ -30,6 +30,7 @@ def _clean_compiled(before):
         shutil.rmtree(path, ignore_errors=True)
 
 D, H, NKV = 128, 2048, 4
+K_HIST = 6
 
 
 class Session:
@@ -99,6 +100,108 @@ class Runtime:
         if position < rows:
             mask[:, :, :, position] = 0
         return mask
+
+# ---- batched prefill -------------------------------------------------------------
+    # The shipped programs take one position per call, so a 4k prompt is 4k dispatches.
+    # A second program set with a sequence axis of T moves T positions per dispatch; the
+    # two sets keep their own KV caches, so the handoff copies the batched cache into the
+    # single-position states once, after the prefill.
+
+    def _load_batch(self):
+        if getattr(self, 'batch_programs', None):
+            return True
+        directory = os.environ.get('LFM3_BATCH_DIR',
+                                   os.path.join(os.path.dirname(self.dir), 'model-28k-b8'))
+        self.batch_dir = directory
+        if not os.path.isdir(directory):
+            return False
+        self.batch_T = int(os.environ.get('LFM3_BATCH_T', '8'))
+        programs = []
+        for index, kind in enumerate(self.layer_types):
+            if kind == 'conv':
+                name = 'layer%d_conv.mlpackage' % index
+            else:
+                name = 'layer%d_%s.mlpackage' % (
+                    index, 'slide' if kind == 'sliding_attention' else 'full')
+            path = os.path.join(directory, name)
+            if not os.path.isdir(path):
+                return False
+            programs.append(ct.models.MLModel(path, compute_units=ct.ComputeUnit.CPU_AND_NE))
+        self.batch_programs = programs
+        self.batch_masks = {
+            'full': np.full((1, NKV, self.batch_T * 4, self.full_rows), -1e4, np.float16),
+            'slide': np.full((1, NKV, self.batch_T * 4, self.slide_rows), -1e4, np.float16),
+        }
+        return True
+
+    def _chunk_mask(self, kind, position, count):
+        """One row per (head, position), each revealing everything up to its own position."""
+        key = 'slide' if kind == 'sliding_attention' else 'full'
+        mask = self.batch_masks[key]
+        rows = mask.shape[-1]
+        mask.fill(-1e4)
+        for step in range(count):
+            visible = min(position + step + 1, rows)
+            mask[:, :, step * 4:(step + 1) * 4, :visible] = 0
+        return mask
+
+    def prefill_batch(self, session, token_ids):
+        """Run the leading whole multiple of T tokens through the batched programs."""
+        if not self._load_batch():
+            return 0
+        T = self.batch_T
+        count = (len(token_ids) // T) * T
+        if count == 0:
+            return 0
+        if getattr(session, 'batch_states', None) is None:
+            session.batch_states = [program.make_state() if stateful else None
+                                    for program, stateful in zip(self.batch_programs, self.stateful)]
+            session.batch_hists = [np.zeros((1, H, K_HIST, 1), np.float16) if not stateful else None
+                                   for stateful in self.stateful]
+        rows = np.stack([self.emb[int(t)] for t in token_ids[:count]]).astype(np.float16)
+        hidden_all = rows.reshape(1, count, H).transpose(0, 2, 1)[..., None]
+        start = session.position
+        last = None
+        for offset in range(0, count, T):
+            hidden = np.ascontiguousarray(hidden_all[..., offset:offset + T, :])
+            position = start + offset
+            for index, kind in enumerate(self.layer_types):
+                program = self.batch_programs[index]
+                if kind == 'conv':
+                    out = program.predict({'in0': hidden, 'in1': session.batch_hists[index]})
+                    values = [np.asarray(v) for v in out.values()]
+                    hidden = next(v for v in values if v.shape[2] == T)
+                    session.batch_hists[index] = next(v for v in values if v.shape[2] != T)
+                else:
+                    sliding = kind == 'sliding_attention'
+                    cos = self.rope['slide_cos' if sliding else 'full_cos'][position:position + T]
+                    sin = self.rope['slide_sin' if sliding else 'full_sin'][position:position + T]
+                    out = program.predict(
+                        {'in0': hidden,
+                         'in1': np.array([position], np.int32),
+                         'in2': cos.reshape(T, D),
+                         'in3': sin.reshape(T, D),
+                         'in4': self._chunk_mask(kind, position, T)},
+                        state=session.batch_states[index])
+                    hidden = np.asarray(list(out.values())[0])
+            last = hidden
+        if os.environ.get('LFM3_NO_SYNC', '0') != '1':
+            self._sync_batch_to_session(session)
+        session.position = start + count
+        # the caller wants the hidden state of the LAST position, not the whole chunk
+        session.hidden = np.ascontiguousarray(last[..., -1:, :])
+        return count
+
+    def _sync_batch_to_session(self, session):
+        """Copy the batched KV caches into the single-position states, once per prefill."""
+        for index, kind in enumerate(self.layer_types):
+            if kind == 'conv':
+                hist = session.batch_hists[index]                  # (1, H, K-1, 1)
+                session.hists[index] = np.ascontiguousarray(hist.transpose(0, 1, 3, 2))
+            else:
+                source = session.batch_states[index]
+                target = session.states[index]
+                target.cache[:] = source.cache[:]
 
     def _run_position(self, session: Session, hidden) -> None:
         """Run one position through the 24 layers."""
