@@ -77,6 +77,12 @@ class Runtime:
         # overwrite.  A window turns the full-attention caches into rings, which is what makes
         # contexts beyond the cache size usable at all (exact inside the window).
         self.window = int(os.environ.get('LFM3_WINDOW', '0'))
+        if self.window:
+            print('WARNING: LFM3_WINDOW=%d -- the full-attention caches are rings, so the model'
+                  % self.window)
+            print('         attends to the last %d tokens only. Past that, earlier context is'
+                  % self.window)
+            print('         overwritten and forgotten. For exact attention leave LFM3_WINDOW unset.')
         self.emb = np.load(os.path.join(model_dir, 'embed_tokens.npy'), mmap_mode='r')
         self.full_rows, self.slide_rows = full_rows, slide_rows
 

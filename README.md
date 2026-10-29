@@ -23,7 +23,8 @@ small Python runtime.
 | **tool calling** | **working** | `tools` in the request → `finish_reason: tool_calls` with parsed arguments |
 | palettisation (LUT6) | **working** | 16.3 -> 21.1 tok/s, same answers |
 | LM head split 2 x 64,000 | **working** | 21.1 -> **24.5 tok/s**, both ops on the engine |
-| 75k context | **works with a rolling window** | verified at **78,042 tokens**; exact to 28,672, window beyond |
+| context, exact and guaranteed | **28,672 tokens** | the shipped configuration, nothing forgotten |
+| beyond 28,672 | opt-in rolling window (`LFM3_WINDOW=1`) | runs at 78,042 tokens, but the oldest tokens are **forgotten** — an approximation, not a longer attention |
 
 Speed, measured on an M-series Mac with the model palettised and a short context:
 
