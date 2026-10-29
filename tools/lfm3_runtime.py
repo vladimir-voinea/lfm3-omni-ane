@@ -29,7 +29,7 @@ def _clean_compiled(before):
     for path in _compiled_dirs() - before:
         shutil.rmtree(path, ignore_errors=True)
 
-D, H, NKV = 128, 2048, 4
+D, H, NKV, NH = 128, 2048, 4, 16
 K_HIST = 6
 
 
@@ -109,7 +109,25 @@ class Runtime:
         self.head = ct.models.MLModel(os.path.join(model_dir, head_name),
                                       compute_units=ct.ComputeUnit.CPU_AND_NE)
 
+    def _plain_session(self) -> Session:
+        states, hists = [], []
+        for index, stateful in enumerate(self.stateful):
+            if stateful:
+                states.append(self.programs[index].make_state())
+                hists.append(None)
+            else:
+                states.append(None)
+                hists.append(np.zeros((1, H, 1, K_HIST), np.float16))
+        return Session(states, hists, self.full_rows, self.slide_rows)
+
     def new_session(self) -> Session:
+        if os.environ.get('LFM3_TILED', '0') == '1':
+            if not self._load_tiled():
+                raise RuntimeError('LFM3_TILED=1 but the tiled build is not in %s'
+                                   % getattr(self, 'tiled_dir', 'models/model-tiled'))
+            session = self._plain_session()
+            session.tile_states = self.new_tile_states()
+            return session
         states, hists = [], []
         for index, stateful in enumerate(self.stateful):
             if stateful:
@@ -255,6 +273,104 @@ class Runtime:
                 target = session.states[index]
                 target.cache[:] = source.cache[:]
 
+    # ---- exact tiled attention -------------------------------------------------------
+    # The shipped full-attention programs hold one 28,672-row cache and cap the context
+    # there.  Here each full-attention layer is three programs: a projection, N tiles that
+    # hold KV slices with no weights of their own, and an output program.  The tiles return
+    # the three flash-attention numbers and the host combines them in float64, so the
+    # softmax is exact over the whole context.
+
+    def _load_tiled(self):
+        if getattr(self, 'tiled_programs', None):
+            return True
+        candidates = [os.environ.get('LFM3_TILED_DIR'),
+                      os.path.join(os.path.dirname(self.dir), 'model-tiled'),
+                      os.path.join(os.path.dirname(self.dir), 'models', 'model-tiled')]
+        directory = next((path for path in candidates if path and os.path.isdir(path)), '')
+        if not os.path.isdir(directory):
+            return False
+        self.tiled_dir = directory
+        self.tile_rows = int(os.environ.get('LFM3_TILE', '16384'))
+        self.tiled_layers = [i for i, kind in enumerate(self.layer_types)
+                             if kind == 'full_attention']
+        self.tiled_programs = {}
+        for layer in self.tiled_layers:
+            proj = os.path.join(directory, 'L%d_proj.mlpackage' % layer)
+            out = os.path.join(directory, 'L%d_out.mlpackage' % layer)
+            if not (os.path.isdir(proj) and os.path.isdir(out)):
+                return False
+            proj_model = ct.models.MLModel(proj, compute_units=ct.ComputeUnit.CPU_AND_NE)
+            entry = {'proj': proj_model,
+                     'proj_outputs': [o.name for o in
+                                      proj_model.get_spec().description.output],
+                     'out': ct.models.MLModel(out, compute_units=ct.ComputeUnit.CPU_AND_NE),
+                     'tiles': []}
+            index = 0
+            while True:
+                path = os.path.join(directory, 'L%d_tile%d.mlpackage' % (layer, index))
+                if not os.path.isdir(path):
+                    break
+                program = ct.models.MLModel(path, compute_units=ct.ComputeUnit.CPU_AND_NE)
+                # dict order out of predict() is not the declared order, so keep the names
+                declared = [output.name for output in
+                            program.get_spec().description.output]
+                entry.setdefault('outputs', declared)
+                entry['tiles'].append(program)
+                index += 1
+            self.tiled_programs[layer] = entry
+        return True
+
+    def new_tile_states(self):
+        states = {}
+        for layer, entry in self.tiled_programs.items():
+            states[layer] = [tile.make_state() for tile in entry['tiles']]
+        return states
+
+    def _tild_mask(self, slot, is_diagonal):
+        mask = np.zeros((1, NKV, 4, self.tile_rows), np.float16)
+        if is_diagonal:
+            mask[..., slot + 1:] = -1e4
+        return mask
+
+    def _run_tiled_attention(self, session, layer, x, cos, sin, position):
+        entry = self.tiled_programs[layer]
+        result = entry['proj'].predict({'in0': x,
+                                        'in1': cos.reshape(D),
+                                        'in2': sin.reshape(D)})
+        # declared order: q, k, v, gate -- k and v share a shape, so names, not sizes
+        names = entry['proj_outputs']
+        q, k, v, gate = (np.asarray(result[name]) for name in names[:4])
+        slot = position % self.tile_rows
+        owners = position // self.tile_rows
+        best = None
+        weight = None
+        acc = None
+        for index, tile in enumerate(entry['tiles']):
+            if index > owners:
+                break
+            out = tile.predict({'in0': q, 'in1': k, 'in2': v,
+                                'in3': np.array([slot], np.int32),
+                                'in4': self._tild_mask(slot, index == owners)},
+                               state=session.tile_states[layer][index])
+            # declared order is (tile max, sum of exp, weighted V)
+            names = entry['outputs']
+            tile_max = np.asarray(out[names[0]], np.float64).reshape(-1)
+            tile_sum = np.asarray(out[names[1]], np.float64).reshape(-1)
+            tile_acc = np.asarray(out[names[2]], np.float64).reshape(NH, D)
+            if best is None:
+                best, weight, acc = tile_max, tile_sum, tile_acc
+            else:
+                merged = np.maximum(best, tile_max)
+                left = np.exp(best - merged)
+                right = np.exp(tile_max - merged)
+                weight = weight * left + tile_sum * right
+                acc = acc * left[:, None] + tile_acc * right[:, None]
+                best = merged
+        attention = (acc / weight[:, None]).astype(np.float16).reshape(1, NH * D)
+        out = entry['out'].predict({'in0': x, 'in1': attention,
+                                    'in2': gate.reshape(1, NH, 1, 1).astype(np.float16)})
+        return np.asarray(list(out.values())[0])
+
     def _run_position(self, session: Session, hidden) -> None:
         """Run one position through the 24 layers."""
         for index, kind in enumerate(self.layer_types):
@@ -268,6 +384,10 @@ class Runtime:
                         hidden = arr
                     else:
                         session.hists[index] = arr
+            elif kind == 'full_attention' and getattr(self, 'tiled_programs', None):
+                cos, sin = self._rotation(kind, session.position)
+                hidden = self._run_tiled_attention(session, index, hidden, cos, sin,
+                                                   session.position)
             else:
                 slide = kind == 'sliding_attention'
                 # the rotation is by ABSOLUTE position, so the tables must cover the whole
