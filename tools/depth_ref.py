@@ -1,6 +1,6 @@
 import os
 
-from paths import SOURCE
+from paths import SOURCE, TOWERS
 # Depth decoder transcribed: 3 bidirectional LFM3 layers over the 12 codebook slots.
 import json
 import sys
@@ -10,7 +10,7 @@ import torch
 import torch.nn.functional as F
 from safetensors import safe_open
 
-P = os.path.join(SOURCE, 'model.safetensors')
+P = TOWERS
 PRE = 'model.depth_decoder.'
 H, NH, NKV, HD, FF, CB = 1024, 32, 8, 32, 2816, 12
 EPS, THETA = 1e-5, 1e6

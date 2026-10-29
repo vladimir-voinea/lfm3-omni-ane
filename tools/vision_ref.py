@@ -4,13 +4,13 @@
 # (a caption that matches the picture) comes after it is converted.
 from __future__ import annotations
 import os
-from paths import MODEL, SOURCE
+from paths import MODEL, SOURCE, TOWERS
 
 import numpy as np
 import torch
 from safetensors import safe_open
 
-P = os.path.join(SOURCE, 'model.safetensors')
+P = TOWERS
 H, NH, NKV, HD, FF = 1024, 16, 8, 64, 2560
 MERGE, KS, EPS, THETA = 2, 3, 1e-5, 1e6
 

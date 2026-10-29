@@ -8,8 +8,11 @@ PROJECT = os.environ.get('LFM3_PROJECT', os.path.dirname(HERE))
 MODEL = os.environ.get('LFM3_MODEL', os.path.join(PROJECT, 'model-28k-lut6'))
 # the runtime's own programs
 ANE = os.environ.get('LFM3_ANE', MODEL)
-# the original weights: vision, audio in, speech out, and rebuilding
+# the original weights live in this directory
 SOURCE = os.environ.get('LFM3_SOURCE', os.path.join(PROJECT, 'models', 'LFM3-Omni-2B'))
+# only the towers are needed at run time: the text backbone is already converted, so the
+# 4.3 GB checkpoint was extracted down to the 0.88 GB the vision, audio and depth paths read
+TOWERS = os.environ.get('LFM3_TOWERS', os.path.join(SOURCE, 'towers.safetensors'))
 # where build_model.py writes before palettisation
 BUILD = os.environ.get('LFM3_BUILD', os.path.join(PROJECT, 'model-28k'))
 

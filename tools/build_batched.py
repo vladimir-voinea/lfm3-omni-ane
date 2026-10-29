@@ -10,7 +10,7 @@ import coremltools as ct
 from safetensors import safe_open
 
 sys.path.insert(0, '/Users/vladimir/dev/lfm3-ane/tools')
-from paths import SOURCE, PROJECT
+from paths import PROJECT, SOURCE
 
 H, NH, NKV, D, K = 2048, 16, 4, 128, 7
 FULL_ROWS, SLIDE_ROWS = 28672, 256

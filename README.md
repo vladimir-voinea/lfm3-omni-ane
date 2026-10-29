@@ -150,6 +150,14 @@ downloaded model directory. Re-download the source only to rebuild the programs:
 huggingface-cli download LiquidAI/LFM3-Omni-2B --local-dir models/LFM3-Omni-2B
 ```
 
+The text backbone is converted, so vision, audio input and speech out are the only run-time
+readers of that checkpoint. Keep just what they need and reclaim 3.4 GB:
+
+```bash
+python tools/extract_towers.py    # writes towers.safetensors (0.88 GB)
+rm models/LFM3-Omni-2B/model.safetensors
+```
+
 ### What needs the source model
 
 Text and tool calling run from the converted build alone. **Image input, audio input and

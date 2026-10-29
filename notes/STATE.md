@@ -1041,27 +1041,24 @@ In-situ profile of one decode step (median of 10, LUT6):
 | 6 full-attention layers | 16.25 |
 | 5 sliding-attention layers | 3.78 |
 | final norm + **LM head** | **11.42** |
-## ROUND 70: final verification
+## ROUND 168: the 4.3 GB checkpoint is gone, multimodal still works
+
+Only the towers are read at run time -- the text backbone is already converted. Extracted the
+379 tensors the vision, audio and depth paths use into **towers.safetensors (0.88 GB)**
+(`tools/extract_towers.py`), pointed those paths at it, and deleted the 4.33 GB checkpoint.
+
+Verified before deleting, not after:
 
 ```
-PASS  health            {'status': 'ok', 'context_length': 28672}
-PASS  text              Tokyo
-PASS  tool call         {'name': 'get_weather', 'arguments': '{"city": "Paris"}'}
-PASS  tool result used  '...The weather in Paris is 18 degrees and cloudy.'
-PASS  image in          Red
-PASS  audio in          Good to be back online.
-PASS  speech out        49964 bytes, WAV
+PASS  image in     Red
+PASS  audio in     Working from a smaller file
+PASS  speech out   49964 bytes, WAV
 exit=0
 ```
 
-Speed, three runs: cold **29.1 / 29.3 / 29.3** (median 29.3), warm **32.0 / 32.4 / 32.0**
-(median 32.0).
+(the audio check transcribes the speech the previous step generated, so encoder, depth decoder
+and codec all still agree).
 
-### Disk lesson worth keeping
-
-The temp directory held **12 GB** of `.mlmodelc` again. The `atexit` hook only runs on a clean
-exit -- every process I killed (the batched builds, the stuck probes) left its compiled
-programs behind. `tools/clean_caches.sh` reclaimed it to 728 MB. **Any run that may be killed
-needs the cache sweep afterwards**, not just the runs that finish.
-
-Footprint: project 6.2 GB, published repo 1.3 MB, 12 GB free.
+**Project 6.2 GB -> 3.0 GB**, free space 12 GB. The rebuild and reference scripts still point
+at the full checkpoint by design -- they need the language-model weights, and their error
+message now says how to fetch it again.
