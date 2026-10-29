@@ -1041,20 +1041,29 @@ In-situ profile of one decode step (median of 10, LUT6):
 | 6 full-attention layers | 16.25 |
 | 5 sliding-attention layers | 3.78 |
 | final norm + **LM head** | **11.42** |
-## ROUND 67: an agent can drive it, and it is not just a claim
+## ROUND 68: past the cache size at last -- 29,942 tokens, answered correctly
 
-`tools/agent_demo.py` -- a full agent loop over the same HTTP surface, dependency-free:
+The three walls from round 65 all apply to *exact* attention over an arbitrarily long context.
+There is a fourth option that I had dismissed too quickly: **let the full-attention caches
+become rings**, so the model always sees the last 28,672 tokens exactly and the context can
+grow without bound.
+
+Implemented (`LFM3_WINDOW=1`) with two things that make it clean:
+
+* the write slot wraps (`position % 28,672`) while the rotation stays keyed to the **absolute**
+  position -- a sliding window in the strict sense, same as the model's own 256-token layers;
+* positions past the table are rotated **on the fly** (`cos(p * inv_freq)`), so there is no
+  38 MB table and no upper bound baked into a file.
+
+Measured, one needle inside the window:
 
 ```
-What is the weather in Paris?
-  tool -> get_weather({'city': 'Paris'})
-  answer (1 tool round(s)): The weather in Paris is 18C and cloudy.
-How much is 100 EUR in USD?
-  tool -> convert_currency({'amount': 100, 'from_currency': 'EUR', 'to_currency': 'USD'})
-  answer (1 tool round(s)): 100 EUR is approximately 108 USD, using a conversion rate of 1 EUR = 1.08 USD.
+{'prompt_tokens': 29942, 'window_mode': True, 'seconds': 891.2, 'answer': 'OMEGA-99'}
 ```
 
-Two different tools, correct argument extraction including a float and two strings, and both
-answers use the tool's numbers rather than inventing them. That is the 'agent/harness' clause
-of the objective, demonstrated rather than asserted -- anything speaking the OpenAI protocol
-(a chat UI, an agent framework, a shell script) can drive this engine.
+That is 1,270 tokens beyond the old ceiling, the ring actually rolled (the oldest keys were
+overwritten), and the answer is the code placed near the end. Exact mode is untouched and still
+answers Tokyo / Rome at 26.4 / 30.5 tok/s.
+
+The cost is prefill: 891 s for ~30k tokens, i.e. **~34 tok/s token-serial**, so a full 75k
+prompt is ~36 minutes before the first output token. Decode after that is unaffected.

@@ -33,6 +33,19 @@ D, H, NKV = 128, 2048, 4
 K_HIST = 6
 
 
+def rope_frequencies(theta, partial):
+    """The inverse frequencies build_model uses, so positions can be rotated on the fly.
+
+    A table long enough for an unbounded window would be 38 MB of numpy for no reason: the
+    rotation for any absolute position is four multiplications.
+    """
+    inv = 1.0 / (theta ** (np.arange(0, D, 2, dtype=np.float64) / D))
+    angles = int(partial * D) // 2
+    if angles < D // 2:
+        inv = np.concatenate([inv[:angles], np.zeros(D // 2 - angles)])
+    return inv
+
+
 class Session:
     def __init__(self, states, hists, full_rows, slide_rows):
         self.states = states
@@ -56,6 +69,14 @@ class Runtime:
         self.layer_types = json.load(open(os.path.join(model_dir, 'layer_types.json')))
         rope = np.load(os.path.join(model_dir, 'rope.npz'))
         self.rope = {k: rope[k] for k in ('full_cos', 'full_sin', 'slide_cos', 'slide_sin')}
+        # lengths the tables cover; beyond them the runtime computes the rotation directly
+        self.rope_rows = int(rope['full_cos'].shape[0])
+        self.full_inv = rope_frequencies(1e6, 0.5)
+        self.slide_inv = rope_frequencies(1e4, 1.0)
+        # 0 means exact: no ring, and a position past the cache is an error rather than an
+        # overwrite.  A window turns the full-attention caches into rings, which is what makes
+        # contexts beyond the cache size usable at all (exact inside the window).
+        self.window = int(os.environ.get('LFM3_WINDOW', '0'))
         self.emb = np.load(os.path.join(model_dir, 'embed_tokens.npy'), mmap_mode='r')
         self.full_rows, self.slide_rows = full_rows, slide_rows
 
@@ -99,7 +120,21 @@ class Runtime:
         rows = mask.shape[-1]
         if position < rows:
             mask[:, :, :, position] = 0
+        elif key == 'full' and self.window:
+            # past the end of a ring every row holds a live position, so nothing is masked
+            mask.fill(0)
         return mask
+
+    def _rotation(self, kind, position):
+        """cos/sin for one absolute position: from the table when it reaches, else computed."""
+        sliding = kind == 'sliding_attention'
+        if position < self.rope_rows:
+            prefix = 'slide' if sliding else 'full'
+            return self.rope[prefix + '_cos'][position], self.rope[prefix + '_sin'][position]
+        inv = self.slide_inv if sliding else self.full_inv
+        angles = position * inv
+        turn = np.concatenate([angles, angles])
+        return np.cos(turn).astype(np.float16), np.sin(turn).astype(np.float16)
 
 # ---- batched prefill -------------------------------------------------------------
     # The shipped programs take one position per call, so a 4k prompt is 4k dispatches.
@@ -231,9 +266,13 @@ class Runtime:
                 slide = kind == 'sliding_attention'
                 # the rotation is by ABSOLUTE position, so the tables must cover the whole
                 # context; the sliding cache itself is a ring, so the write slot wraps
-                cos = self.rope['slide_cos' if slide else 'full_cos'][session.position]
-                sin = self.rope['slide_sin' if slide else 'full_sin'][session.position]
-                slot = session.position % self.slide_rows if slide else session.position
+                cos, sin = self._rotation(kind, session.position)
+                if slide:
+                    slot = session.position % self.slide_rows
+                elif self.window:
+                    slot = session.position % self.full_rows
+                else:
+                    slot = session.position
                 out = program.predict(
                     {'in0': hidden,
                      'in1': np.array([slot], np.int32),
