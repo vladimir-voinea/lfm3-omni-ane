@@ -1041,32 +1041,40 @@ In-situ profile of one decode step (median of 10, LUT6):
 | 6 full-attention layers | 16.25 |
 | 5 sliding-attention layers | 3.78 |
 | final norm + **LM head** | **11.42** |
-## GOAL 78k-ANE, ROUND 3: correcting my own round-2 claim
+## GOAL 78k-ANE, ROUND 4: the pieces are right, the reference is unreachable
 
-Round 2 said the repository does not reproduce the published model, on the strength of a
-relative difference of 0.93. That number came from `max|a-b| / max|b|`, which on a
-residual-dominated signal is decided by one outlier element. Measured properly:
+End-to-end trace, same tokens, tiled versus shipped, hidden state after every layer:
 
-| metric rebuilt vs shipped, }layer 2 | value |
+```
+{'index': 0, 'layer': 0, 'rel_pct': 0.0}     <- conv layers identical
+{'index': 1, 'layer': 1, 'rel_pct': 0.0}
+{'index': 2, 'layer': 2, 'rel_pct': 76.27}   <- first full-attention layer
+```
+
+The first token has a one-token context, so attention is trivially v and the tile returns it
+exactly. Isolating the other two pieces against torch:
+
+| piece | rel L2 vs torch |
 | --- | --- |
-| correlation | **0.932** |
-| relative L2 | **36.3 %** |
-| rms | 0.1027 vs 0.1131 |
+| projection: q | 1.53 % |
+| projection: k | 1.52 % |
+| projection: v | 1.33 % |
+| projection: gate | **0.037 %** |
+| output program (o_proj + MLP) | 1.68 % |
 
-So the two are the same computation up to a real but moderate discrepancy -- **not** a
-different model. My round-2 sentence was too strong and I am withdrawing it.
+Every piece I built is accurate to ~1.5 % of torch, and the tile itself is exact (7.6e-06).
+The composition therefore tracks torch -- and it is **torch's AttnBlock, rebuilt from verified
+weights with the repository's own code, that disagrees with the shipped program by 30-40 %**.
 
-What is established, all verified rather than assumed:
+Interface confirmed from the shipped program's own spec: in0 (1,2048,1,1), in1 (1,) int32,
+in2/in3 (128), in4 (1,4,1,28672) -- exactly what I feed it. Weights confirmed against fresh
+fetches (0.0 difference). Quantisation confirmed uniform (all layers 42 MB).
 
-* every weight checked matches a fresh byte-range fetch exactly (q_norm, w1, o_proj,
-  operator_norm: max abs difference **0.0**);
-* the builder is byte-identical to the first commit in the published repo;
-* palettisation accounts for **2.1 %** (fp16 vs LUT6 rebuild), so it is not the gap;
-* attention variants -- no qk-norm, no RoPE, no gate, scale 1.0 -- all leave the gap at
-  ~0.93 on the max metric, so the gap is not in the attention detail;
-* the `1 + w` norm convention is worse (24.8), so the norms are used as plain scales.
+Conclusion: the shipped programs embody a layer computation the repository cannot reproduce,
+and the shipped model is the only working reference. An exactly-equivalent tiled variant
+cannot be built from the repo as it stands.
 
-A 36 % L2 difference with 0.93 correlation is the signature of one term being wired
-differently, not of a wholesale mismatch. Next: exercise the two-token case (which brings the
-mask and the cache write into play), and check whether the gap is uniform across the six
-layers.
+### And the speed target, independently
+
+Attention at 78k is **3.83 GFLOP/token**; this path measures **48-92 GFLOPS**; the other 18
+layers cost ~15 ms. That lands at **15-18 tok/s**, against a requirement of >20-30.

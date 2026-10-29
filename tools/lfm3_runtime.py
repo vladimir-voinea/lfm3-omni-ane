@@ -373,6 +373,7 @@ class Runtime:
 
     def _run_position(self, session: Session, hidden) -> None:
         """Run one position through the 24 layers."""
+        trace = getattr(self, 'trace', None)
         for index, kind in enumerate(self.layer_types):
             program = self.programs[index]
             if kind == 'conv':
@@ -407,6 +408,8 @@ class Runtime:
                      'in4': self.mask(session, kind, session.position)},
                     state=session.states[index])
                 hidden = np.asarray(list(out.values())[0])
+            if trace is not None:
+                trace.append(np.asarray(hidden).copy())
         session.position += 1
         session.hidden = hidden
 
