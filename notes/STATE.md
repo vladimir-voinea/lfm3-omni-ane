@@ -1041,30 +1041,22 @@ In-situ profile of one decode step (median of 10, LUT6):
 | 6 full-attention layers | 16.25 |
 | 5 sliding-attention layers | 3.78 |
 | final norm + **LM head** | **11.42** |
-## GOAL 78k-ANE, ROUND 5 (cont): the shipped layer's weight list | the checkpoint exactly
+## GOAL 78k-ANE, ROUND 6: blocked, on evidence
 
-Read out of `layer2_full.mlpackage`, the eight palettised tensors, in graph | order:
+**The tiled path is not nearly-right, it is wrong.** Same three tokens, shipped versus tiled:
 
-| # | shipped shape | corresponds to | my tensor |
-| --- | --- | --- | --- |
-| 1 | 2048x2048 | q_proj | same |
-| 2 | 512x2048 | k_proj | same |
-| 3 | 512x2048 | v_proj | same |
-| 4 | 16x2048 | gate | same |
-| 5 | 2048x2048 | o_proj | same |
-| 6 | 7680x2048 | w1 | same |
-| 7 | 7680x2048 | w3 | same |
-| 8 | 2048x7680 | w2 | same |
+| metric | value |
+| --- | --- |
+| logit cosine | **0.34** |
+| top-5 overlap | **0 of 5** |
+| relativeL2 | 63 inviting % |
 
-Every shape matches, and the op histogram (8 convs, 8 `constexpr_lut_to_dense`, 6 pow + 6
-reduce_mean) matches AttnBlock operation for operation. So the published program computes the
-same function with the same tensors, and the 30-40 % gap has to be in the *values* -- the
-6-bit LUTs -- or in a scalar constant.
+**The wiring probe repeated a harness mistake of mine**: `hasattr(self.mlp, 'w1')` is false for
+the real module, so the silu/gelu/relu branches all fell through to the same path and returned
+37.82 / 37.82 / 37.84. That result says nothing about activations.
 
-Where it stops: the LUT itself is stored as float16 in the package's weight blob, and reading
-it needs the blob offset plus an indices-unpacking pass. The protobuf navigation took four
-wrong turns to get this far (`op.type` / `tensorType` / `dims` / `d.constant.size`), which is
-where the round went.
-
-Unrelated but attempted: measuring decode at the full 28,672-token cache died with
-`ANEProgramProcessRequestDirect() Failed with status=0x2 ... Request cancelled`.
+Six rounds in, the honest summary is that every *piece* I built is verified (tile exact to
+7.6e-06, proj/out within 1.5% of torch, conv layers bit-identical in the end-to-end trace), and
+the reference still disagrees by 30-40% per layer with an identical graph and identical weight
+shapes. Meanwhile the speed requirement fails independently of that: exact 78k needs 109 GFLOPS
+for attention alone at 20 tok/s, and the best ANE tile measures 92.
