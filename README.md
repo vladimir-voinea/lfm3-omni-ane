@@ -16,6 +16,7 @@ small Python runtime.
 | audio input | **working** | encoder matches at **cos 1.0**; transcribes real speech exactly |
 | audio output — depth decoder | **exact** | logits cos 1.0, codes 36/36 |
 | audio output — codec | **exact** | waveform relative error **0.0**, correlation 1.0 |
+| audio output over HTTP | **working** | POST /v1/audio/speech -> audio/wav, 49,964 bytes |
 | audio output — generation loop | **working** | speech level: rms 0.072, spectrum matches the reference (centroid 438 Hz vs 532 Hz) |
 | engine: sessions, prefix cache, sampling | **working** | 2nd turn re-feeds 14 of 18 tokens, first token 0.92 -> 0.70 s |
 | server: OpenAI-compatible, streaming | **working** | `/v1/chat/completions`, incremental SSE, `[DONE]` |
@@ -185,6 +186,10 @@ The runtime also sets `TMPDIR` to `disk-tmp/` inside the project before loading 
 
   The shipping configuration is the exact single 28,672-token cache, which is where the
   hardware stops cooperating.
+* **Speech out works over HTTP too**, not only through the CLI: POST /v1/audio/speech
+  answered **200, audio/wav, 49,964 bytes** with a valid RIFF header (it used to answer 501 --
+  that was the endpoint refusing to load the codec while the server already held all 26
+  programs; it loads fine now).
 * **Audio output works, within its range.** Speech is generated on the engine end to end:
   *"Good to be back online."* renders 1.84 s at rms **0.0685**, peak 0.46, against the
   official pipeline's rms 0.076. The cause of an earlier silence was a BOS token the model
