@@ -5,12 +5,15 @@
 Every check prints PASS/FAIL with the evidence, and the exit code is the number of failures.
 """
 import base64
+import glob
 import io
 import json
 import os
+import shutil
 import struct
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -168,6 +171,9 @@ def main():
             server.wait(timeout=20)
         except subprocess.TimeoutExpired:
             server.kill()
+        # a terminated server never runs its atexit hook, so its compiled programs stay behind
+        for compiled in glob.glob(os.path.join(tempfile.gettempdir(), '*.mlmodelc')):
+            shutil.rmtree(compiled, ignore_errors=True)
     print({'failures': FAILURES}, flush=True)
     return len(FAILURES)
 

@@ -1041,24 +1041,18 @@ In-situ profile of one decode step (median of 10, LUT6):
 | 6 full-attention layers | 16.25 |
 | 5 sliding-attention layers | 3.78 |
 | final norm + **LM head** | **11.42** |
-## ROUND 168: the 4.3 GB checkpoint is gone, multimodal still works
+## ROUND 168 (cont.): pushed everywhere, and the disk is clean
 
-Only the towers are read at run time -- the text backbone is already converted. Extracted the
-379 tensors the vision, audio and depth paths use into **towers.safetensors (0.88 GB)**
-(`tools/extract_towers.py`), pointed those paths at it, and deleted the 4.33 GB checkpoint.
+| where | state |
+| --- | --- |
+| GitHub | `b8a9d0f`, working tree clean |
+| HuggingFace | **98 files, 3.07 GB**, `towers.safetensors` uploaded (876 MB at 5.5 MB/s) |
+| project on disk | **3.0 GB** (was 6.2): 2.0 GB converted build + 0.88 GB towers + 0.15 GB codec |
+| temp | 2.1 GB -> **747 MB** (28 stale `.mlmodelc` swept) |
 
-Verified before deleting, not after:
+Removed this round: the 4.33 GB checkpoint (after verifying `extract_towers.py` covers every
+tensor the vision, audio and depth paths read), a stale `clone-test` clone, an `hf-cache`
+directory, build logs, `__pycache__`, and the compiled Core ML caches left by killed runs.
 
-```
-PASS  image in     Red
-PASS  audio in     Working from a smaller file
-PASS  speech out   49964 bytes, WAV
-exit=0
-```
-
-(the audio check transcribes the speech the previous step generated, so encoder, depth decoder
-and codec all still agree).
-
-**Project 6.2 GB -> 3.0 GB**, free space 12 GB. The rebuild and reference scripts still point
-at the full checkpoint by design -- they need the language-model weights, and their error
-message now says how to fetch it again.
+Also fixed the leak that kept producing them: the smoke test terminates its server with
+SIGTERM, which never runs an `atexit` hook, so it now sweeps `*.mlmodelc` in its own teardown.
