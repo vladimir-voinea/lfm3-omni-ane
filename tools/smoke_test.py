@@ -20,6 +20,7 @@ import urllib.request
 import zlib
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import modes
 from paths import PROJECT
 
 PORT = int(os.environ.get('LFM3_SMOKE_PORT', '8099'))
@@ -33,12 +34,17 @@ def check(name, condition, evidence):
         FAILURES.append(name)
 
 
-def post(path, payload, timeout=600):
+def post(path, payload, timeout=600, expect_error=False):
     data = json.dumps(payload).encode()
     request = urllib.request.Request(BASE + path, data=data,
                                      headers={'Content-Type': 'application/json'})
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        return json.loads(response.read())
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return json.loads(response.read())
+    except urllib.error.HTTPError as error:
+        if not expect_error:
+            raise
+        return json.loads(error.read())
 
 
 def get(path, timeout=60):
@@ -87,7 +93,8 @@ def message_text(response):
 
 
 def main():
-    environment = dict(os.environ, LFM3_PORT=str(PORT))
+    mode = os.environ.get('LFM3_SMOKE_MODE', modes.DEFAULT_MODE)
+    environment = dict(os.environ, LFM3_PORT=str(PORT), LFM3_MODE=mode)
     log = open(os.path.join(PROJECT, 'smoke_server.log'), 'w')
     server = subprocess.Popen(
         [sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'lfm3_serve.py')],
@@ -104,6 +111,14 @@ def main():
                 time.sleep(2)
         health = get('/health')
         check('health', health.get('status') == 'ok', health)
+        check('mode reported', health.get('mode') == mode and
+              health.get('context_length') == modes.resolve(mode).context, health)
+        check('mode exactness', health.get('exact') == modes.resolve(mode).exact,
+              {'exact': health.get('exact')})
+        oversize = post('/v1/chat/completions',
+                        {'messages': [{'role': 'user', 'content': 'hi'}],
+                         'max_tokens': modes.resolve(mode).context + 1}, expect_error=True)
+        check('context guard', oversize.get('error') == 'context_exceeded', oversize)
 
         reply = post('/v1/chat/completions', {'messages': [{'role': 'user',
                      'content': 'What is the capital of Japan? Answer in one word.'}],
