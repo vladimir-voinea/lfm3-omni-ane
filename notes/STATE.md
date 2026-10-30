@@ -1041,22 +1041,33 @@ In-situ profile of one decode step (median of 10, LUT6):
 | 6 full-attention layers | 16.25 |
 | 5 sliding-attention layers | 3.78 |
 | final norm + **LM head** | **11.42** |
-## GOAL 78k-ANE, ROUND 6: blocked, on evidence
+## RING BUFFER REMOVED (user correction)
 
-**The tiled path is not nearly-right, it is wrong.** Same three tokens, shipped versus tiled:
+The user does not accept a ring buffer presented as 78k context, and they are right: it is
+a window over the last 28,672 tokens, not a longer memory.  `modes.py` now has one mode,
+28k exact, and asking for anything longer fails with a message saying a longer context needs
+a build with larger caches -- not a different mode.
 
-| metric | value |
+## The 37 % mystery, round 2: what is ruled out
+
+Every probe this round returns ~37 % on layer 2 regardless of what is varied:
+
+| hypothesis | result |
 | --- | --- |
-| logit cosine | **0.34** |
-| top-5 overlap | **0 of 5** |
-| relativeL2 | 63 inviting % |
+| input is pre-normalised | 103.9 % (no) |
+| attention output layout: kv_q_d / q_kv_d / kv_d_q | 37.82 / 37.78 / 37.53 |
+| gate applied after o_proj | 36.91 |
+| bf16 bits reinterpreted as fp16 | 1487 % (no) |
+| tensors from layer 6 or 10 instead of 2 | 37.32 / 38.14 |
+| swap w1/w3 | 37.82 |
+| swap q_proj/o_proj | 36.9 |
+| swap pre/post norms | 38.74 |
 
-**The wiring probe repeated a harness mistake of mine**: `hasattr(self.mlp, 'w1')` is false for
-the real module, so the silu/gelu/relu branches all fell through to the same path and returned
-37.82 / 37.82 / 37.84. That result says nothing about activations.
+The metric is insensitive to direction (the norms fix the magnitude), but the decisive number
+is this: the shipped layer's delta has rms **0.035**, mine **0.0191**, and their correlation
+is **-0.008**. Same magnitude class, uncorrelated direction.
 
-Six rounds in, the honest summary is that every *piece* I built is verified (tile exact to
-7.6e-06, proj/out within 1.5% of torch, conv layers bit-identical in the end-to-end trace), and
-the reference still disagrees by 30-40% per layer with an identical graph and identical weight
-shapes. Meanwhile the speed requirement fails independently of that: exact 78k needs 109 GFLOPS
-for attention alone at 20 tok/s, and the best ANE tile measures 92.
+New fact worth keeping: `embed_tokens.npy` in the shipped build has std **0.022** while the
+checkpoint's embedding has std **1.125**. The 50x scale is absorbed by the RMSNorms, which is
+why the model still answers correctly, but it means the shipped build's tensors are not
+simply the checkpoint's tensors.

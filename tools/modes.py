@@ -1,22 +1,14 @@
-"""Execution modes: one context length each, with its own measured ceiling.
+"""Execution modes.
 
-The full-attention caches inside the compiled programs have a fixed number of rows,
-so how much context a run can hold is decided when the model is built, not when it
-runs.  Two modes cover the useful cases.
+Context length is fixed when the model is built, because the full-attention caches hold a
+fixed number of rows inside the compiled programs.  The shipped build holds 28,672.
 
-28k  every token stays resident, so attention sees the whole conversation.  This is
-     the exact mode: nothing is ever dropped.
+There is one mode.  A longer context is not available by relabelling anything: the caches
+cannot hold more rows, so a run past 28,672 tokens can only be a window over the most recent
+tokens, which is not the same thing as a longer context and is not offered as one.
 
-78k  the same caches are used as rings, so a run can continue past 28,672 tokens.
-     The model then attends to the most recent 28,672 tokens and earlier ones are
-     overwritten.  It is not an approximation of exact attention -- it is ordinary
-     sliding-window attention, and the window is the whole memory.
-
-The ceilings below are decode speed measured on this machine with the shipped LUT6
-build, at a 64-token context (28k: 30.6 tok/s, 78k: 30.9).  Decode slows as the full
-cache fills, so treat them as the best case.  The two modes diverge as context grows:
-28k pays more for every token once its cache is full, while 78k stops growing at its
-window and stays flat from there.
+`LFM3_WINDOW=<rows>` still exists as a probe hook for experiments.  It turns the caches into
+rings and forgets old tokens; it is not a supported mode.
 """
 from __future__ import annotations
 
@@ -42,19 +34,9 @@ MODES = {
         note='Every token stays in the attention cache; nothing is forgotten.',
         ceiling_tps=30.6,
     ),
-    '78k': Mode(
-        name='78k',
-        context=78042,
-        window_rows=28672,
-        exact=False,
-        note='Ring caches: attends to the most recent 28,672 tokens; older context is '
-             'overwritten and forgotten. Cost per token stops growing once the window is full.',
-        ceiling_tps=30.9,
-    ),
 }
 
 DEFAULT_MODE = '28k'
-
 
 _module: dict = {}
 
@@ -63,13 +45,13 @@ def resolve(name: Optional[str] = None) -> Mode:
     """Look up a mode by name, falling back to LFM3_MODE and then the default."""
     key = (name or os.environ.get('LFM3_MODE') or DEFAULT_MODE).strip().lower()
     if key not in MODES:
-        raise SystemExit('unknown mode %r; choose one of: %s'
+        raise SystemExit('unknown mode %r; available: %s (a longer context is not a mode, it '
+                         'needs a build with larger caches)'
                          % (key, ', '.join(sorted(MODES))))
     return MODES[key]
 
 
 def current() -> Mode:
-    """The mode this process is running in (resolved once, so it cannot drift)."""
     if 'mode' not in _module:
         _module['mode'] = resolve()
     return _module['mode']
