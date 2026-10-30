@@ -20,6 +20,8 @@ import glob
 import shutil
 import tempfile as _tempfile
 
+import modes
+
 
 def _compiled_dirs():
     return set(glob.glob(os.path.join(_tempfile.gettempdir(), '*.mlmodelc')))
@@ -62,8 +64,10 @@ class Session:
 
 
 class Runtime:
-    def __init__(self, model_dir: str, full_rows: int = 28672, slide_rows: int = 256):
+    def __init__(self, model_dir: str, full_rows: int = 28672, slide_rows: int = 256,
+                 mode=None):
         self.dir = model_dir
+        self.mode = modes.resolve(mode)
         _before = _compiled_dirs()
         atexit.register(_clean_compiled, _before)
         self.layer_types = json.load(open(os.path.join(model_dir, 'layer_types.json')))
@@ -76,13 +80,13 @@ class Runtime:
         # 0 means exact: no ring, and a position past the cache is an error rather than an
         # overwrite.  A window turns the full-attention caches into rings, which is what makes
         # contexts beyond the cache size usable at all (exact inside the window).
-        self.window = int(os.environ.get('LFM3_WINDOW', '0'))
+        # the mode decides whether the caches ring; LFM3_WINDOW still overrides for probes
+        self.window = int(os.environ.get('LFM3_WINDOW', self.mode.window_rows))
         if self.window:
-            print('WARNING: LFM3_WINDOW=%d -- the full-attention caches are rings, so the model'
-                  % self.window)
-            print('         attends to the last %d tokens only. Past that, earlier context is'
-                  % self.window)
-            print('         overwritten and forgotten. For exact attention leave LFM3_WINDOW unset.')
+            print('mode %s: exact=%s, context=%d, %s'
+                  % (self.mode.name, self.mode.exact, self.mode.context, self.mode.note))
+        else:
+            print('mode %s: exact=True, context=%d' % (self.mode.name, self.mode.context))
         self.emb = np.load(os.path.join(model_dir, 'embed_tokens.npy'), mmap_mode='r')
         self.full_rows, self.slide_rows = full_rows, slide_rows
 

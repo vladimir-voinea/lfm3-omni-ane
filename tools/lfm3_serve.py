@@ -16,6 +16,7 @@ sys.path.insert(0, PROJECT)
 from sampling import SamplingParams  # noqa: E402
 
 from lfm3_engine import Engine  # noqa: E402
+import modes  # noqa: E402
 
 # Keep Core ML's compiled caches on disk, not in the RAM-backed temp directory: each
 # program load writes an .mlmodelc that would otherwise sit in memory.
@@ -84,7 +85,7 @@ class Handler(BaseHTTPRequestHandler):
             eng = engine()
             return self._json({'status': 'ok', 'model': MODEL_ID,
                                'sessions': len(eng.sessions),
-                               'context_length': 28672})
+                               **modes.summary()})
         if self.path.startswith('/v1/models'):
             return self._json({'object': 'list', 'data': [{'id': MODEL_ID,
                                                            'object': 'model',
@@ -164,6 +165,19 @@ class Handler(BaseHTTPRequestHandler):
                                           + ' '.join(text_parts))
         stream = bool(request.get('stream'))
         max_tokens = int(request.get('max_tokens') or 256)
+
+        # Refuse early and say which mode would fit, rather than failing mid-generation.
+        mode = modes.current()
+        needed = len(engine().tokenizer.encode(
+            __import__('lfm3_engine').render_chat(messages)).ids) + 1 + max_tokens
+        if needed > mode.context:
+            return self._json({'error': 'context_exceeded',
+                               'message': ('this request needs %d tokens; mode %s holds %d%s'
+                                           % (needed, mode.name, mode.context,
+                                              '' if mode.exact else
+                                              ' (it also forgets beyond its window)')),
+                               'needed_tokens': needed,
+                               **modes.summary()}, 400)
         params = SamplingParams(temperature=float(request.get('temperature', 0.0) or 0.0),
                                 top_p=float(request.get('top_p', 1.0) or 1.0),
                                 repetition_penalty=float(request.get('repetition_penalty', 1.0) or 1.0))
@@ -232,9 +246,23 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == '__main__':
-    port = int(os.environ.get('LFM3_PORT', '8010'))
-    server = ThreadingHTTPServer(('127.0.0.1', port), Handler)
-    print('LFM3 ANE server on http://127.0.0.1:%d' % port, flush=True)
+    import argparse
+
+    parser = argparse.ArgumentParser(description='LFM3-Omni-2B on the Apple Neural Engine.')
+    parser.add_argument('--mode', default=os.environ.get('LFM3_MODE', modes.DEFAULT_MODE),
+                        help='28k (exact, every token resident) or 78k (ring cache, forgets '
+                             'past 28,672 tokens)')
+    parser.add_argument('--port', type=int, default=int(os.environ.get('LFM3_PORT', '8010')))
+    arguments = parser.parse_args()
+    chosen = modes.resolve(arguments.mode)
+    os.environ['LFM3_MODE'] = chosen.name
+    os.makedirs(_CACHE_DIR, exist_ok=True)
+    server = ThreadingHTTPServer(('127.0.0.1', arguments.port), Handler)
+    print('LFM3 ANE server on http://127.0.0.1:%d' % arguments.port, flush=True)
+    print('mode %s (exact=%s): up to %d tokens, ceiling about %.0f tok/s at short context'
+          % (chosen.name, chosen.exact, chosen.context, chosen.ceiling_tps), flush=True)
+    if not chosen.exact:
+        print('         %s' % chosen.note, flush=True)
     engine()
     print('model loaded', flush=True)
     server.serve_forever()

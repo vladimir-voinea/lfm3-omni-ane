@@ -23,8 +23,38 @@ small Python runtime.
 | **tool calling** | **working** | `tools` in the request → `finish_reason: tool_calls` with parsed arguments |
 | palettisation (LUT6) | **working** | 16.3 -> 21.1 tok/s, same answers |
 | LM head split 2 x 64,000 | **working** | 21.1 -> **24.5 tok/s**, both ops on the engine |
-| context, exact and guaranteed | **28,672 tokens** | the shipped configuration, nothing forgotten |
-| beyond 28,672 | opt-in rolling window (`LFM3_WINDOW=1`) | runs at 78,042 tokens, but the oldest tokens are **forgotten** — an approximation, not a longer attention |
+| mode `28k`: exact context | **28,672 tokens** | every token stays in the attention cache; nothing is forgotten |
+| mode `78k`: long context | **78,042 tokens** | ring caches: attends to the last 28,672 tokens; older context is forgotten |
+| both modes over HTTP | **working** | `--mode 28k` / `--mode 78k`; `/health` reports the mode, the ceiling and whether it is exact |
+
+### The two modes
+
+Context length is fixed when the model is built, because the full-attention caches have a
+fixed number of rows inside the compiled programs. Each mode therefore has its own ceiling,
+and they diverge as the context grows:
+
+| mode | context | attention | decode at 64-token context | per-token cost at long context |
+|---|---|---|---|---|
+| `28k` | 28,672 | exact, whole conversation | **30.6 tok/s** | grows until the cache is full (~11-15 tok/s) |
+| `78k` | 78,042 | last 28,672 tokens only | **30.9 tok/s** | flat once the window is full |
+
+`28k` is the honest default: nothing is ever dropped. `78k` buys length with memory — it is
+ordinary sliding-window attention, not an approximation of exact attention, and a fact stated
+early in a `78k` conversation will have been overwritten by the time you ask about it.
+
+```bash
+python tools/lfm3_serve.py --mode 28k     # exact, 28,672 tokens
+python tools/lfm3_serve.py --mode 78k     # 78,042 tokens, sliding window
+```
+
+`/health` answers with the mode in force, so a client can tell which one it is talking to:
+
+```json
+{"status": "ok", "mode": "78k", "context_length": 78042, "exact": false, "ceiling_tps": 30.9}
+```
+
+A request that needs more tokens than the mode holds is refused with `400
+context_exceeded` and a message naming the limit, rather than failing mid-generation.
 
 Speed, measured on an M-series Mac with the model palettised and a short context:
 
@@ -186,10 +216,12 @@ The runtime also sets `TMPDIR` to `disk-tmp/` inside the project before loading 
 
 ## Limits, stated plainly
 
-* **Longer context works with a rolling window** (`LFM3_WINDOW=1`). The full-attention
-  caches become rings: the write slot wraps while the rotation stays keyed to the absolute
-  position, so the model always sees the last 28,672 tokens exactly and the context grows
-  without bound. Measured twice:
+* **`78k` mode is sliding-window attention, not longer exact attention.** What makes it work
+  is that the full-attention caches become rings: the write slot wraps while the rotation
+  stays keyed to the absolute position, so the model sees the last 28,672 tokens attended
+  exactly and the run can continue past that. Anything older has been overwritten -- the
+  window *is* the memory. (`LFM3_WINDOW=<rows>` still overrides the mode for probes.)
+  Measured twice:
 
   | prompt tokens | answer | wall time |
   | --- | --- | --- |
