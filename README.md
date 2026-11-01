@@ -61,7 +61,7 @@ whether or not it is masked, so expect ~11-15 tok/s once the cache is full.
 The official implementation (fp32, whole sequence) and the Core ML programs were given the same
 241-token prompt mixing English, Romanian, code and arithmetic (`probes/reference/`):
 
-| | published LUT6 | **LUT8 with the numeric fixes** |
+| | earlier LUT6 | **LUT8 with the numeric fixes (published)** |
 |---|---|---|
 | top-1 agreement | 81.7 % | **96.3 %** |
 | top-5 overlap | 4.14 of 5 | **4.83 of 5** |
@@ -165,6 +165,7 @@ Everything needed is in two places, so deleting the local copy loses nothing:
 ```bash
 # the converted model (2.0 GB, 92 files)
 huggingface-cli download vladimir94/lfm3-omni-2b-ane-coreml --local-dir model-28k-lut6
+# (the directory name is only the default the tools look for; LFM3_MODEL points them elsewhere)
 
 # this repository (code, probes, notes)
 git clone https://github.com/vladimir-voinea/lfm3-omni-ane
