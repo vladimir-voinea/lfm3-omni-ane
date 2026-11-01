@@ -1117,3 +1117,25 @@ top-5 overlap 4.0 of 5, mean KL 0.100, median KL 0.049. Layer 0 on the ANE vs th
 So the engine's arithmetic costs more than palettisation, and LUT8 takes nearly all of LUT6's
 speed gain with little of its error. Earlier "0.33 %" figures for LUT6 came from synthetic input,
 and they understate the error on real hidden states.
+
+## LUT8 end to end, and what a rebuild was missing
+
+A full rebuild from `tools/build_model.py`, palettised to LUT8 with the split head, against the
+official model on a 241-token prompt mixing English, Romanian, code and arithmetic:
+
+| | LUT6 (published) | LUT8 |
+|---|---|---|
+| top-1 agreement | 81.7 % | **85.5 %** |
+| top-5 overlap | 4.14 of 5 | 4.29 of 5 |
+| KL, mean / median | 0.203 / 0.093 | **0.130 / 0.039** |
+| logit cosine | 0.9983 | 0.9991 |
+| decode, 88 tokens, median | 28.5-32.0 tok/s | 30.0-30.3 tok/s |
+| size | 2.0 GB | 2.4 GB |
+
+One LUT8 speed run measured 17.4 tok/s, on a machine shared with other work, and is left out.
+LUT8 passes `tools/smoke_test.py`. This is one prompt, not a broad evaluation.
+
+The rebuild exposed gaps that are now fixed: `build_model.py` wrote a 256-row sliding RoPE table,
+which crashes the runtime at token 256 (the shipped table has 28,672 rows; the new one is
+identical to it), and it did not write the split LM head or the tokenizer and config files.
+

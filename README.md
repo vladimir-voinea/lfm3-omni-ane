@@ -80,6 +80,10 @@ the engine rather than the weights, measured on layer 0:
 | LUT8 | 5.41 % | 0.98 % | 0.75 ms |
 | LUT6 (published) | 6.81 % | 4.10 % | 0.69 ms |
 
+End to end on a 241-token prompt, a LUT8 rebuild agrees with the official model on 85.5 % of next
+tokens against 81.7 % for the published LUT6, with mean KL 0.130 against 0.203, at about 30 tok/s
+against 28.5-32 and 2.4 GB against 2.0 GB. To build it, run step 3 below with `LUT_BITS=8`.
+
 ## How the conversion works
 
 The model cannot be converted in one piece on this hardware, so it is split into 26 programs:
