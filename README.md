@@ -58,31 +58,22 @@ whether or not it is masked, so expect ~11-15 tok/s once the cache is full.
 
 ## Fidelity against the official model
 
-The official implementation (fp32, whole sequence) and the published programs were given the
-same 36-token chat prompt (`probes/reference/`):
+The official implementation (fp32, whole sequence) and the Core ML programs were given the same
+241-token prompt mixing English, Romanian, code and arithmetic (`probes/reference/`):
 
-| measure | result |
-|---|---|
-| logit cosine, mean over positions | **0.998** |
-| top-1 agreement | **88.9 %** |
-| top-5 overlap | 4.0 of 5 |
-| KL divergence, mean / median | 0.100 / 0.049 |
-| embedding table | identical |
+| | published LUT6 | **LUT8 with the numeric fixes** |
+|---|---|---|
+| top-1 agreement | 81.7 % | **96.3 %** |
+| top-5 overlap | 4.14 of 5 | **4.83 of 5** |
+| KL divergence, mean | 0.2034 | **0.0036** |
+| logit cosine | 0.9983 | **1.0000** |
+| decode | 28.5-32.0 tok/s | **29.3-29.8 tok/s** |
+| size | 2.0 GB | 2.4 GB |
 
-The build code itself is exact: its PyTorch layers match the official ones to 0.01 % or better,
-and rebuilding and palettising layer 0 gives a `weight.bin` byte-identical to the published one.
-On real inputs the published layers differ from the official ones by about 1-8 %. Most of that is
-the engine rather than the weights, measured on layer 0:
-
-| weights | on the ANE | on the CPU | ANE dispatch |
-|---|---|---|---|
-| fp16 | 5.12 % | 0.49 % | 1.36 ms |
-| LUT8 | 5.41 % | 0.98 % | 0.75 ms |
-| LUT6 (published) | 6.81 % | 4.10 % | 0.69 ms |
-
-End to end on a 241-token prompt, a LUT8 rebuild agrees with the official model on 85.5 % of next
-tokens against 81.7 % for the published LUT6, with mean KL 0.130 against 0.203, at about 30 tok/s
-against 28.5-32 and 2.4 GB against 2.0 GB. To build it, run step 3 below with `LUT_BITS=8`.
+The build code is exact: its PyTorch layers match the official ones to 0.01 % or better. Most of
+the published model's error came from the engine's arithmetic, in two places that `build_model.py`
+now avoids: a projection whose input values are small, and silu. `notes/STATE.md` has the
+measurements. Step 3 below builds LUT6 by default; set `LUT_BITS=8` for the better build.
 
 ## How the conversion works
 
