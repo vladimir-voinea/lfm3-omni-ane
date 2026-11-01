@@ -1189,5 +1189,16 @@ holds `vision.mlpackage` and `audio_encoder.mlpackage`, and fall back to torch o
 
 Audio over 30 s falls back to torch. `tools/vision_check.py` and `tools/audio_check.py` measure
 these. The vision photo is a single sample, and flat colour inputs are worse (cosine 0.985).
-Speech output (depth decoder and codec) still runs in torch on the CPU.
 
+`tools/build_speech.py` does the same for speech output, with every operation placed on the engine:
+
+| program | on the ANE vs the torch transcription | time | size |
+|---|---|---|---|
+| depth decoder | argmax agreement 100 %, logit cosine 1.0, one synthetic frame | 3.7 ms | 160 MB |
+| codec network | waveform correlation 0.996, 8.8 % error, random codes | 15 ms for 3.8 s | 71 MB |
+
+Sampling and the inverse STFT stay on the host, and `speech_tables.npz` (284 MB) holds the tables,
+so speech no longer reads the tower or codec checkpoints. Clips over 128 frames (10.2 s) fall back
+to torch for the codec. Text, vision, audio in and speech out now all run on the engine; PyTorch is
+still imported for host-side arithmetic, so it is not yet removed as a dependency. Speech quality
+has only been compared numerically.
