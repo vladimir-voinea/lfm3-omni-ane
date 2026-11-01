@@ -1139,3 +1139,66 @@ The rebuild exposed gaps that are now fixed: `build_model.py` wrote a 256-row sl
 which crashes the runtime at token 256 (the shipped table has 28,672 rows; the new one is
 identical to it), and it did not write the split LM head or the tokenizer and config files.
 
+## The engine's error, found and removed: KL 0.203 -> 0.0036
+
+Comparing every stage of a layer between the ANE and the CPU found two places where the engine
+loses accuracy. Everything before them, including the norms and the 2,048-wide projections with
+ordinary inputs, is accurate to about 0.1 %, better than the CPU.
+
+Stage by stage, text layer 0, error against exact arithmetic:
+
+| stage | ANE | CPU |
+|---|---|---|
+| `in_c * dw`, values up to 0.019 | 0.28 % | 0.73 % |
+| `out_proj` of that | **7.35 %** | 0.62 % |
+
+1. **A projection whose inputs are small.** The input to `out_proj` peaks at 0.019, and the ANE
+   loses most of its precision on it. The fix scales the input up through the weights feeding it,
+   `in_c`, `v_proj` and `w3`, by 16. The RMS norm after the projection cancels that, because it is
+   scale invariant once its epsilon scales by 16 squared. A constant multiply does nothing here:
+   Core ML folds it into the convolution's weights and the numbers do not change.
+2. **silu.** On the vision tower it took a stage from 2.15 % to 9.90 %. `0.5 x (1 + tanh(x / 2))`
+   is the same function and does not. On the text model this one matters much less.
+
+Scaling the whole stream, or the norm's formula, makes no difference. It is not a denormal effect.
+
+End to end, against the official model, 241-token mixed prompt:
+
+| | LUT6 (published) | LUT8 | **LUT8 + fixes** |
+|---|---|---|---|
+| top-1 agreement | 81.7 % | 85.5 % | **96.3 %** |
+| top-5 overlap | 4.14 of 5 | 4.29 of 5 | **4.83 of 5** |
+| KL, mean | 0.2034 | 0.1303 | **0.0036** |
+| KL, median | 0.0928 | 0.0385 | **0.0018** |
+| logit cosine | 0.9983 | 0.9991 | **1.0000** |
+| decode tok/s | 28.5-32.0 | 29.8-30.3 | **29.3-29.8** |
+
+On the 36-token prompt the fixed build agrees on 100 % of top-1 tokens, mean KL 0.0022. It passes
+`tools/smoke_test.py`. Long contexts were not re-measured; the longest run here is 337 tokens.
+
+## Vision and audio input on the engine
+
+`tools/build_vision.py` and `tools/build_audio.py` each write one stateless Core ML program, fp16,
+with the same engine fixes. `lfm3_vision_api.py` and `lfm3_audio_api.py` use them when the build
+holds `vision.mlpackage` and `audio_encoder.mlpackage`, and fall back to torch otherwise.
+
+| program | input | on the ANE vs the torch tower | time | size |
+|---|---|---|---|---|
+| vision | fixed 224 x 224 | cosine 0.999 on a photo, 41 % error down to 4.2 % | 13-22 ms | 362 MB |
+| audio encoder | mel padded to 30 s | cosine 0.9996, 2.7 % error, on 2 s of speech | 24 ms | 221 MB |
+
+Audio over 30 s falls back to torch. `tools/vision_check.py` and `tools/audio_check.py` measure
+these. The vision photo is a single sample, and flat colour inputs are worse (cosine 0.985).
+
+`tools/build_speech.py` does the same for speech output, with every operation placed on the engine:
+
+| program | on the ANE vs the torch transcription | time | size |
+|---|---|---|---|
+| depth decoder | argmax agreement 100 %, logit cosine 1.0, one synthetic frame | 3.7 ms | 160 MB |
+| codec network | waveform correlation 0.996, 8.8 % error, random codes | 15 ms for 3.8 s | 71 MB |
+
+Sampling and the inverse STFT stay on the host, and `speech_tables.npz` (284 MB) holds the tables,
+so speech no longer reads the tower or codec checkpoints. Clips over 128 frames (10.2 s) fall back
+to torch for the codec. Text, vision, audio in and speech out now all run on the engine; PyTorch is
+still imported for host-side arithmetic, so it is not yet removed as a dependency. Speech quality
+has only been compared numerically.

@@ -42,7 +42,9 @@ def sample_codes(hidden, w, history=None, schedule=(4, 4, 4), temperature=0.4, p
     start = 0
     for width in schedule:
         pick = list(range(start, start + width))
-        logits = depth_ref.forward(hidden.view(1, -1), codes, ~revealed, w)
+        # w is the checkpoint's weights, or the Core ML speech programs
+        logits = (w.depth_logits(hidden, codes, ~revealed) if hasattr(w, 'depth_logits')
+                  else depth_ref.forward(hidden.view(1, -1), codes, ~revealed, w))
         for index in pick:
             scores = logits[0, index].float().clone()
             if history is not None and len(history):

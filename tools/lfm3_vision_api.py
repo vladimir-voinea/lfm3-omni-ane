@@ -35,6 +35,17 @@ def _load():
     return _VISION
 
 
+def _coreml_tower():
+    '''The Core ML tower when the build has one, or None to use the torch tower.'''
+    if 'coreml' not in _VISION:
+        path = os.path.join(MODEL, 'vision.mlpackage')
+        _VISION['coreml'] = None
+        if os.path.exists(path):
+            import coremltools as ct
+            _VISION['coreml'] = ct.models.MLModel(path, compute_units=ct.ComputeUnit.CPU_AND_NE)
+    return _VISION['coreml']
+
+
 def rows_from_data_uri(uri, size=224):
     '''data URI -> the vectors the text model sees, one per merged patch.'''
     payload = uri.split(',', 1)[1] if ',' in uri else uri
@@ -45,9 +56,13 @@ def rows_from_data_uri(uri, size=224):
         xs = (np.arange(size) * width // size).clip(0, width - 1)
         pixels = pixels[ys][:, xs]
     array = pixels.astype(np.float32).transpose(2, 0, 1) / 255.0
-    state = _load()
     patches, gh, gw = patchify(torch.from_numpy(array))
     patches = ((patches - 0.5) / 0.5).float()
+    tower = _coreml_tower()
+    if tower is not None:
+        tokens = tower.predict({'patches': patches[None].numpy()})['tokens']
+        return [row for row in np.asarray(tokens, np.float32).reshape(-1, tokens.shape[-1])]
+    state = _load()
     with torch.no_grad():
         tokens = projector(state['tower'].forward(patches, gh, gw), state['weights'])
     return [row.numpy() for row in tokens]

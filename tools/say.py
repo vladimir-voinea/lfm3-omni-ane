@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import codec_ref
 import depth_ref
+import lfm3_speech
 from audio_out import sample_codes
 from lfm3_runtime import Runtime
 
@@ -29,6 +30,7 @@ ANE = os.environ.get('LFM3_ANE', MODEL)
 AUDIO_START = 125012
 EOS_AUDIO = 2016
 LAYERS = ['conv', 'conv', 'attn', 'conv', 'attn', 'conv', 'attn', 'conv']
+_PROGRAMS = {}
 
 
 def load_depth():
@@ -57,13 +59,19 @@ def say(text, max_frames=48, runtime=None, depth=None, codec=None):
     # a caller that already holds a loaded runtime must pass it: the 26 programs are large
     # enough that a second copy fails to make state on this machine
     runtime = runtime or Runtime(ANE)
+    programs = None
+    if depth is None and codec is None and lfm3_speech.available(ANE):
+        programs = _PROGRAMS.setdefault(ANE, lfm3_speech.Speech(ANE))
+        depth = programs
     depth = depth if depth is not None else load_depth()
-    codec = codec if codec is not None else load_codec()
     session = runtime.new_session()
     runtime.step(session, ids)
     # the audio feedback table is the codebook embedding, not the text embedding
-    with safe_open(depth_ref.P, framework='pt') as handle:
-        book = handle.get_tensor('model.codebook_embedding.weight').float()
+    if programs is not None:
+        book = programs.book
+    else:
+        with safe_open(depth_ref.P, framework='pt') as handle:
+            book = handle.get_tensor('model.codebook_embedding.weight').float()
     torch.manual_seed(0)
     frames = []
     for _ in range(max_frames):
@@ -78,6 +86,11 @@ def say(text, max_frames=48, runtime=None, depth=None, codec=None):
         embed = book[codes[0] + offsets].sum(0).numpy()
         runtime.step_hidden(session, embed)
     codes = torch.tensor(frames)
+    if programs is not None:
+        samples = programs.waveform(codes)
+        if samples is not None:
+            return samples, len(frames)
+    codec = codec if codec is not None else load_codec()
     audio = codec_ref.decode(codes.unsqueeze(0).transpose(1, 2), codec, LAYERS)[0]
     return audio.clamp(-1, 1).numpy(), len(frames)
 

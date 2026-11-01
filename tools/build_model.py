@@ -26,6 +26,17 @@ FULL_ROWS = 28672   # the tile width the engine accepts
 SLIDING_ROWS = 256
 ROPE_THETA_FULL, ROPE_THETA_SLIDE = 1e6, 1e4
 PARTIAL_FULL = 0.5
+# The engine loses accuracy on two things, measured stage by stage in notes/STATE.md: silu, and a
+# large projection whose input values are small.  So the input of each projection is scaled up
+# through the weights feeding it, which the RMS norm after it cancels: it is scale invariant once
+# its epsilon scales too.  A plain constant multiply would not do, because Core ML folds it into
+# the convolution's weights.  Both forms equal the originals.
+PROJECT_SCALE = float(os.environ.get('LFM3_PROJECT_SCALE', '16'))
+
+
+def silu_engine(x):
+    return 0.5 * x * (1 + torch.tanh(0.5 * x))
+
 
 
 def rotate_half(x):
@@ -34,12 +45,13 @@ def rotate_half(x):
 
 
 class Rms(torch.nn.Module):
-    def __init__(self, w):
+    def __init__(self, w, scale=1.0):
         super().__init__()
         self.w = torch.nn.Parameter(w.clone())
+        self.eps = EPS * scale * scale
 
     def forward(self, x):
-        return x * torch.rsqrt(x.pow(2).mean(dim=1, keepdim=True) + EPS) * self.w.view(1, -1, 1, 1)
+        return x * torch.rsqrt(x.pow(2).mean(dim=1, keepdim=True) + self.eps) * self.w.view(1, -1, 1, 1)
 
 
 class Mlp(torch.nn.Module):
@@ -48,26 +60,26 @@ class Mlp(torch.nn.Module):
         self.w1 = torch.nn.Conv2d(H, FF, 1, bias=False)
         self.w1.weight.data = t['feed_forward.w1.weight'].view(FF, H, 1, 1).clone()
         self.w3 = torch.nn.Conv2d(H, FF, 1, bias=False)
-        self.w3.weight.data = t['feed_forward.w3.weight'].view(FF, H, 1, 1).clone()
+        self.w3.weight.data = t['feed_forward.w3.weight'].view(FF, H, 1, 1).clone() * PROJECT_SCALE
         self.w2 = torch.nn.Conv2d(FF, H, 1, bias=False)
         self.w2.weight.data = t['feed_forward.w2.weight'].view(H, FF, 1, 1).clone()
 
     def forward(self, x):
-        return self.w2(torch.nn.functional.silu(self.w1(x)) * self.w3(x))
+        return self.w2(silu_engine(self.w1(x)) * self.w3(x))
 
 
 class ConvBlock(torch.nn.Module):
     def __init__(self, t):
         super().__init__()
         self.pre = Rms(t['operator_norm.weight'])
-        self.post = Rms(t['post_operator_norm.weight'])
+        self.post = Rms(t['post_operator_norm.weight'], PROJECT_SCALE)
         self.ffn_norm = Rms(t['ffn_norm.weight'])
-        self.ffn_post = Rms(t['post_ffn_norm.weight'])
+        self.ffn_post = Rms(t['post_ffn_norm.weight'], PROJECT_SCALE)
         w = t['conv.in_proj.weight'].view(3, H, H)
         self.in_b = torch.nn.Conv2d(H, H, 1, bias=False)
         self.in_b.weight.data = w[0].view(H, H, 1, 1).clone()
         self.in_c = torch.nn.Conv2d(H, H, 1, bias=False)
-        self.in_c.weight.data = w[1].view(H, H, 1, 1).clone()
+        self.in_c.weight.data = w[1].view(H, H, 1, 1).clone() * PROJECT_SCALE
         self.in_x = torch.nn.Conv2d(H, H, 1, bias=False)
         self.in_x.weight.data = w[2].view(H, H, 1, 1).clone()
         self.dw = torch.nn.Conv2d(H, H, (1, K), groups=H, bias=False)
@@ -91,15 +103,15 @@ class AttnBlock(torch.nn.Module):
         super().__init__()
         self.rows = rows
         self.pre = Rms(t['operator_norm.weight'])
-        self.post = Rms(t['post_operator_norm.weight'])
+        self.post = Rms(t['post_operator_norm.weight'], PROJECT_SCALE)
         self.ffn_norm = Rms(t['ffn_norm.weight'])
-        self.ffn_post = Rms(t['post_ffn_norm.weight'])
+        self.ffn_post = Rms(t['post_ffn_norm.weight'], PROJECT_SCALE)
         self.q_proj = torch.nn.Conv2d(H, NH * D, 1, bias=False)
         self.q_proj.weight.data = t['self_attn.q_proj.weight'].view(NH * D, H, 1, 1).clone()
         self.k_proj = torch.nn.Conv2d(H, NKV * D, 1, bias=False)
         self.k_proj.weight.data = t['self_attn.k_proj.weight'].view(NKV * D, H, 1, 1).clone()
         self.v_proj = torch.nn.Conv2d(H, NKV * D, 1, bias=False)
-        self.v_proj.weight.data = t['self_attn.v_proj.weight'].view(NKV * D, H, 1, 1).clone()
+        self.v_proj.weight.data = t['self_attn.v_proj.weight'].view(NKV * D, H, 1, 1).clone() * PROJECT_SCALE
         self.o_proj = torch.nn.Conv2d(H, H, 1, bias=False)
         self.o_proj.weight.data = t['self_attn.o_proj.weight'].view(H, H, 1, 1).clone()
         self.q_norm = torch.nn.Parameter(t['self_attn.q_norm.weight'].clone())

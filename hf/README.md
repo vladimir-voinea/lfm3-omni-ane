@@ -21,8 +21,8 @@ and running on the Apple Neural Engine. This repository holds the **converted pr
 only**; the runtime, the conversion code and the measurements live in
 [vladimir-voinea/lfm3-omni-ane](https://github.com/vladimir-voinea/lfm3-omni-ane).
 
-This is a **quantized conversion** of the base model (LUT6 palettization of the converted
-programs), not a merge and not a fine-tune. No weights were retrained.
+This is a **quantized conversion** of the base model (LUT8 palettization of the text programs),
+not a merge and not a fine-tune. No weights were retrained.
 
 ## Contents
 
@@ -33,19 +33,22 @@ programs), not a merge and not a fine-tune. No weights were retrained.
 | `layer{N}_slide.mlpackage` | 5 sliding-attention layers, 256-row cache |
 | `final_norm.mlpackage` | the final norm |
 | `lm_head.mlpackage` | the 128,000-way head (whole) |
-| `lm_head_a/b.mlpackage` | the same head split into 2 x 64,000 rows — **both ops place on the engine**, 11.4 ms -> 3.0 ms |
+| `lm_head_a/b.mlpackage` | the same head split into 2 x 64,000 rows, which is what runs on the engine |
+| `vision.mlpackage` | vision tower and projector, 224 x 224 |
+| `audio_encoder.mlpackage` | audio encoder and projector, up to 30 s |
+| `depth_decoder.mlpackage`, `codec.mlpackage` | speech output, up to 10.2 s through the codec program |
+| `speech_tables.npz` | tables the host needs for speech |
 | `embed_tokens.npy` | the embedding table |
 | `rope.npz`, `layer_types.json` | rotary tables and the layer map |
 
-~1.8 GB, palettized 6-bit. The pre-palettization build is ~3.7 GB and marginally more
-accurate.
+~3.5 GB. Text programs are palettized to 8 bits; the multimodal programs are fp16.
 
 ## Use
 
 ```bash
-huggingface-cli download vladimir94/lfm3-omni-2b-ane-coreml --local-dir model-28k-lut6
+huggingface-cli download vladimir94/lfm3-omni-2b-ane-coreml --local-dir lfm3-omni-2b-ane-coreml
 git clone https://github.com/vladimir-voinea/lfm3-omni-ane
-LFM3_ANE=$PWD/model-28k-lut6 python lfm3-omni-ane/tools/lfm3_serve.py
+LFM3_MODEL=$PWD/lfm3-omni-2b-ane-coreml python lfm3-omni-ane/tools/lfm3_serve.py
 ```
 
 ## Context
@@ -56,25 +59,31 @@ attended exactly. A request needing more is refused with `400 context_exceeded`.
 
 ## Measured
 
-* **30.6 tok/s** decode at a 64-token context, falling to ~11-15 tok/s as the cache fills
-  (an earlier run under load measured 24.4-24.5 tok/s, so expect that range on a busy machine)
-* palettisation 16.3 -> 21.1 tok/s, then the split head 21.1 -> 24.5 tok/s, answers unchanged throughout ("Japan -> Tokyo", "Italy -> Rome")
-* an end-to-end smoke test covers text, tool call, tool result, image in, audio in and speech
-  out, plus the context guard
+* **about 30 tok/s** decode at short context (29.3-29.8 measured over 88 tokens), falling as the
+  cache fills. The ~11-15 tok/s long-context figure is from the earlier 6-bit build
+* against the official model on a 241-token prompt mixing English, Romanian, code and arithmetic:
+  top-1 agreement **96.3 %**, top-5 overlap 4.83 of 5, mean KL **0.0036**, logit cosine 1.0000
+  (the earlier 6-bit build here measured 81.7 % and 0.2034)
+* an end-to-end smoke test passes: text, tool call, tool result, image in, audio in, speech out and
+  the context guard
 
-## Fidelity
+## What changed the fidelity
 
-Against the official model on a 36-token chat prompt: logit cosine **0.998**, top-1 agreement
-**88.9 %**, top-5 overlap 4.0 of 5, mean KL divergence 0.100. Most of the difference comes from
-the Neural Engine's arithmetic rather than the weights.
+The Neural Engine loses accuracy on a large projection whose input values are small, and on silu.
+These programs avoid both with forms that equal the originals. The measurements are in `notes/STATE.md`
+in the code repository.
 
 ## Limits
 
 * **Exact attention at 78k is not reachable at speed on this hardware.** The arithmetic does
   not close: exact 78k needs
   ~109 GFLOPS for attention alone at 20 tok/s, and the best measured ANE tile delivers 92.
-* **Only the text model runs on the engine.** Image input, audio input and speech output also
-  need towers from the source checkpoint, which run in PyTorch on the CPU.
+* **Long contexts have not been re-measured on this build.** The longest run with the fixes is
+  337 tokens.
+* **Speech quality has only been compared numerically** (waveform correlation 0.996 against the
+  PyTorch codec on random codes).
+* **Multimodal limits:** audio input over 30 s and speech over 10.2 s fall back to PyTorch, which
+  needs the source checkpoint's towers. PyTorch is still imported by the runtime.
 * **Audio output works.** The depth decoder, sampler and codec are numerically exact
   (rms and spectrum checked against the reference decode over 24 frames); the loop runs on
   the engine and produces speech-level audio.

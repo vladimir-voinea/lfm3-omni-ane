@@ -1,6 +1,7 @@
 # Audio for the server: a base64 WAV becomes the vectors the text model reads.
 import base64
 import io
+import os
 import wave
 
 import numpy as np
@@ -9,6 +10,7 @@ from safetensors import safe_open
 
 import audio_ref
 from mel_front import log_mel
+from paths import MODEL
 
 _AUDIO = {}
 
@@ -25,6 +27,22 @@ def _load():
                 weights[key] = handle.get_tensor(key).float()
     _AUDIO['weights'] = weights
     return weights
+
+
+def _coreml_rows(feats):
+    '''The Core ML encoder's rows when the build has it and the clip fits its window, or None.'''
+    path = os.path.join(MODEL, 'audio_encoder.mlpackage')
+    frames = feats.shape[-1]
+    if not os.path.exists(path) or frames > 3000:
+        return None
+    if 'coreml' not in _AUDIO:
+        import coremltools as ct
+        _AUDIO['coreml'] = ct.models.MLModel(path, compute_units=ct.ComputeUnit.CPU_AND_NE)
+    padded = np.zeros((1, 128, 3000), np.float32)
+    padded[0, :, :frames] = feats.numpy()[0]
+    rows = np.asarray(_AUDIO['coreml'].predict({'mel': padded})['rows'], np.float32)
+    # the same row count the convolutions give the clip at its own length
+    return list(rows[:(frames + 7) // 8])
 
 
 def read_wav_bytes(data):
@@ -51,13 +69,16 @@ def rows_from_base64(payload):
     samples, _ = read_wav_bytes(data)
     mel = log_mel(samples)
     feats = torch.from_numpy(mel).float().unsqueeze(0)
+    rows = _coreml_rows(feats)
+    if rows is not None:
+        return rows
     weights = _load()
     with torch.no_grad():
         _, projected = audio_ref.forward(feats, weights)
     rows = [row for row in projected[0].detach().numpy()]
     # the encoder weights are only needed for this projection; holding them beside the 26
     # resident programs is what made make_state() fail on the next request
-    _AUDIO.clear()
+    _AUDIO.pop('weights', None)
     del weights
     import gc
     gc.collect()
