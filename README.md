@@ -189,16 +189,9 @@ rm models/LFM3-Omni-2B/model.safetensors
 
 ### What needs the source model
 
-Text and tool calling run from the converted build alone. **Image input, audio input and
-speech output additionally need the original weights** (the vision tower, the audio encoder,
-the depth decoder and the codec are still torch fp32 in this conversion, not Core ML):
-
-```bash
-huggingface-cli download LiquidAI/LFM3-Omni-2B --local-dir models/LFM3-Omni-2B
-```
-
-Converting those four to Core ML is the obvious next step; until then they cost 4.3 GB of
-disk and run on the CPU.
+The published build runs text, tools, image input, audio input and speech output on its own. The
+source weights are needed only to rebuild the programs, and for the PyTorch fallbacks: audio input
+over 30 s and speech over 10.2 s.
 
 ### Where Core ML puts its caches
 
