@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 
 from paths import BUILD, MODEL, SOURCE
 import sys
@@ -185,7 +186,7 @@ if __name__ == '__main__':
         keys = [k for k in f.keys() if k.startswith('model.language_model')]
         emb = f.get_tensor('model.language_model.embed_tokens.weight').to(torch.float32)
         final_w = f.get_tensor('model.language_model.embedding_norm.weight').to(torch.float32)
-        types = json.load(open(os.path.join(MODEL, 'config.json')))
+        types = json.load(open(os.path.join(SOURCE, 'config.json')))
         layer_types = types['text_config']['layer_types']
         for i, kind in enumerate(layer_types):
             t = {k.split('layers.%d.' % i)[1]: f.get_tensor(k).to(torch.float32)
@@ -210,11 +211,18 @@ if __name__ == '__main__':
 
     save(FinalNorm(final_w), [(1, H, 1, 1)], [], os.path.join(OUT, 'final_norm.mlpackage'))
     save(LmHead(emb), [(1, H, 1, 1)], [], os.path.join(OUT, 'lm_head.mlpackage'))
+    # a single 128,000-way matmul is not placed on the engine; two chunks of 64,000 are
+    save(LmHead(emb[:64000]), [(1, H, 1, 1)], [], os.path.join(OUT, 'lm_head_a.mlpackage'))
+    save(LmHead(emb[64000:]), [(1, H, 1, 1)], [], os.path.join(OUT, 'lm_head_b.mlpackage'))
     np.save(os.path.join(OUT, 'embed_tokens.npy'), emb.half().numpy())
     f_cos, f_sin = rope_tables(FULL_ROWS, ROPE_THETA_FULL, PARTIAL_FULL)
-    s_cos, s_sin = rope_tables(SLIDING_ROWS, ROPE_THETA_SLIDE, 1.0)
+    # the rotation is by absolute position, so the sliding table covers the context, not the cache
+    s_cos, s_sin = rope_tables(FULL_ROWS, ROPE_THETA_SLIDE, 1.0)
     np.savez(os.path.join(OUT, 'rope.npz'),
              full_cos=f_cos.half().numpy(), full_sin=f_sin.half().numpy(),
              slide_cos=s_cos.half().numpy(), slide_sin=s_sin.half().numpy())
     json.dump(layer_types, open(os.path.join(OUT, 'layer_types.json'), 'w'))
+    for name in ('tokenizer.json', 'tokenizer_config.json', 'config.json',
+                 'generation_config.json', 'chat_template.jinja'):
+        shutil.copy2(os.path.join(SOURCE, name), os.path.join(OUT, name))
     print('done', flush=True)

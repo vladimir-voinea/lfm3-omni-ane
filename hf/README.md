@@ -48,18 +48,35 @@ git clone https://github.com/vladimir-voinea/lfm3-omni-ane
 LFM3_ANE=$PWD/model-28k-lut6 python lfm3-omni-ane/tools/lfm3_serve.py
 ```
 
+## Context
+
+Context length is fixed when the model is built, because the full-attention caches hold a
+fixed number of rows inside the compiled programs. These programs hold **28,672 tokens**, all
+attended exactly. A request needing more is refused with `400 context_exceeded`.
+
 ## Measured
 
-* **24.4 tok/s** cold decode, **24.5 tok/s** with a prefix-cache hit, 0.49 s to first token
-* 28,672-token context
+* **30.6 tok/s** decode at a 64-token context, falling to ~11-15 tok/s as the cache fills
+  (an earlier run under load measured 24.4-24.5 tok/s, so expect that range on a busy machine)
 * palettisation 16.3 -> 21.1 tok/s, then the split head 21.1 -> 24.5 tok/s, answers unchanged throughout ("Japan -> Tokyo", "Italy -> Rome")
+* an end-to-end smoke test covers text, tool call, tool result, image in, audio in and speech
+  out, plus the context guard
+
+## Fidelity
+
+Against the official model on a 36-token chat prompt: logit cosine **0.998**, top-1 agreement
+**88.9 %**, top-5 overlap 4.0 of 5, mean KL divergence 0.100. Most of the difference comes from
+the Neural Engine's arithmetic rather than the weights.
 
 ## Limits
 
-* **75k context is not usable**: the tiled-attention mechanism runs but carries ~2 % error
-  per layer, which compounds. Use the 28,672-token configuration.
+* **Exact attention at 78k is not reachable at speed on this hardware.** The arithmetic does
+  not close: exact 78k needs
+  ~109 GFLOPS for attention alone at 20 tok/s, and the best measured ANE tile delivers 92.
+* **Only the text model runs on the engine.** Image input, audio input and speech output also
+  need towers from the source checkpoint, which run in PyTorch on the CPU.
 * **Audio output works.** The depth decoder, sampler and codec are numerically exact
   (rms and spectrum checked against the reference decode over 24 frames); the loop runs on
   the engine and produces speech-level audio.
-* The LM head runs on the CPU (11.4 ms/token); Core ML will not place a 128,000-way matmul
-  on the engine whole.
+* Core ML will not place a 128,000-way matmul on the engine whole, so the runtime uses the
+  split head (`lm_head_a/b`).

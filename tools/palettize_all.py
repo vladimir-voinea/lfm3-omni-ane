@@ -2,7 +2,7 @@
 # can be pointed at it with LFM3_ANE.
 import os
 
-from paths import BUILD
+from paths import BUILD, PROJECT
 import shutil
 import sys
 
@@ -14,7 +14,7 @@ SRC = BUILD
 
 def main():
     nbits = int(os.environ.get('LUT_BITS', '6'))
-    dst = os.environ.get('DST', '/Users/vladimir/dev/lfm3-ane/model-28k-lut%d' % nbits)
+    dst = os.environ.get('DST', os.path.join(PROJECT, 'model-28k-lut%d' % nbits))
     os.makedirs(dst, exist_ok=True)
     config = cto.OptimizationConfig(
         global_config=cto.OpPalettizerConfig(mode='kmeans', nbits=nbits))
@@ -23,7 +23,7 @@ def main():
         target = os.path.join(dst, name)
         if os.path.exists(target):
             continue
-        if name.endswith('.npy') or name.endswith('.npz') or name.endswith('.json'):
+        if not name.endswith('.mlpackage'):
             shutil.copy2(source, target)
             continue
         model = ct.models.MLModel(source, compute_units=ct.ComputeUnit.CPU_AND_NE)
