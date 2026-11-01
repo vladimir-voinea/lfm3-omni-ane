@@ -1071,3 +1071,49 @@ New fact worth keeping: `embed_tokens.npy` in the shipped build has std **0.022*
 checkpoint's embedding has std **1.125**. The 50x scale is absorbed by the RMSNorms, which is
 why the model still answers correctly, but it means the shipped build's tensors are not
 simply the checkpoint's tensors.
+
+## The 37 % mystery, solved: a byte offset in the probes, not code-vs-model drift
+
+**The build code reproduces the shipped model.** `tools/fetch_layers.py` defined `DATA_START`
+and never used it, so it requested `data_offsets` as file offsets. Every tensor in
+`full_layer_weights.bin` was therefore read 84,872 bytes too early. Those bytes are other real
+weights, with the right scale and no correlation to the true ones (q_proj std 0.0208 vs 0.0194,
+correlation -0.001), which is why the earlier checks on std and file size passed.
+
+| read of `full_layer_weights.bin` | tensors equal to the checkpoint |
+|---|---|
+| as the probes read it | 0 of 84 |
+| shifted by 84,872 bytes | 83 of 84 (the last is cut off by the same shift) |
+
+With the real checkpoint and real inputs, on the same 36-token prompt:
+
+| layer | build code vs official, pos 35 | shipped vs official, pos 35 |
+|---|---|---|
+| 0 conv | 0.00 % | 5.76 % |
+| 2 full | 0.01 % | 6.49 % |
+| 4 sliding | 0.01 % | 6.35 % |
+| 22 full | 0.00 % | 4.25 % |
+
+Rebuilding layer 0 and palettising it to LUT6 gives a `weight.bin` with the same SHA-1 as the
+shipped one. Other layers were compared numerically, not rebuilt.
+
+What this invalidates: everything that loaded this file, which is the "GOAL 78k-ANE" rounds and
+their probes. That covers the 30-40 % per-layer gap, the tiled path's logit cosine of 0.34,
+`models/model-tiled` and the conclusion that the shipped layer cannot be reached from the repo.
+`embed_tokens.npy` is also fine: it equals the checkpoint, std 0.0232, and the 1.125 above was a
+bad read. The GFLOP projection for 78k (15-18 tok/s) does not depend on these weights.
+
+## Fidelity, and where the error actually is
+
+Published programs vs the official model, 36-token chat prompt: logit cosine 0.998, top-1 88.9 %,
+top-5 overlap 4.0 of 5, mean KL 0.100, median KL 0.049. Layer 0 on the ANE vs the CPU:
+
+| weights | ANE | CPU | ANE dispatch |
+|---|---|---|---|
+| fp16 | 5.12 % | 0.49 % | 1.36 ms |
+| LUT8 | 5.41 % | 0.98 % | 0.75 ms |
+| LUT6 | 6.81 % | 4.10 % | 0.69 ms |
+
+So the engine's arithmetic costs more than palettisation, and LUT8 takes nearly all of LUT6's
+speed gain with little of its error. Earlier "0.33 %" figures for LUT6 came from synthetic input,
+and they understate the error on real hidden states.

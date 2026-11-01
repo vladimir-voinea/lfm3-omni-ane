@@ -24,7 +24,8 @@ print({'tensors': len(keep), 'GB': round(total / 1e9, 2)}, flush=True)
 
 # one range request for the whole span, then carve the tensors out locally
 spans = sorted((i['data_offsets'][0], i['data_offsets'][1]) for i in keep.values())
-start, end = spans[0][0], spans[-1][1]
+# data_offsets count from the end of the header, and a range request counts from the file start
+start, end = spans[0][0] + DATA_START, spans[-1][1] + DATA_START
 print({'span_GB': round((end - start) / 1e9, 2)}, flush=True)
 with open(TARGET, 'wb') as out:
     done = 0

@@ -56,6 +56,30 @@ head cost 11.4 ms in place and 3.0 ms split).
 Long contexts are slower: the full-attention programs read a 28,672-row tile
 whether or not it is masked, so expect ~11-15 tok/s once the cache is full.
 
+## Fidelity against the official model
+
+The official implementation (fp32, whole sequence) and the published programs were given the
+same 36-token chat prompt (`probes/reference/`):
+
+| measure | result |
+|---|---|
+| logit cosine, mean over positions | **0.998** |
+| top-1 agreement | **88.9 %** |
+| top-5 overlap | 4.0 of 5 |
+| KL divergence, mean / median | 0.100 / 0.049 |
+| embedding table | identical |
+
+The build code itself is exact: its PyTorch layers match the official ones to 0.01 % or better,
+and rebuilding and palettising layer 0 gives a `weight.bin` byte-identical to the published one.
+On real inputs the published layers differ from the official ones by about 1-8 %. Most of that is
+the engine rather than the weights, measured on layer 0:
+
+| weights | on the ANE | on the CPU | ANE dispatch |
+|---|---|---|---|
+| fp16 | 5.12 % | 0.49 % | 1.36 ms |
+| LUT8 | 5.41 % | 0.98 % | 0.75 ms |
+| LUT6 (published) | 6.81 % | 4.10 % | 0.69 ms |
+
 ## How the conversion works
 
 The model cannot be converted in one piece on this hardware, so it is split into 26 programs:
@@ -80,7 +104,6 @@ timings are not placement: a 0.59 ms "ANE" reading turned out to be the CPU.
 huggingface-cli download LiquidAI/LFM3-Omni-2B --local-dir models/LFM3-Omni-2B
 
 # 2. build the ANE programs (writes model-28k/, ~3.7 GB)
-#    known gap: this does not currently reproduce the published programs; see Limits
 python tools/build_model.py
 
 # 3. palettise to LUT6 (writes model-28k-lut6/, ~1.8 GB, 2x faster)
@@ -206,12 +229,9 @@ The runtime also sets `TMPDIR` to `disk-tmp/` inside the project before loading 
     programs) -- roughly 2.8 GB of duplicated weights, plus 108 extra dispatches per token.
 
   The shipping configuration is the exact single 28,672-token cache, which is where the
-  hardware stops cooperating. Speed fails independently: exact 78k is projected at 15-18 tok/s,
-  and a tiled build measured wrong output (logit cosine 0.34 against the shipped model).
-* **A rebuild from this repository does not reproduce the published programs.** Weights match
-  the checkpoint, but `tools/build_model.py` gives layers that differ from the shipped ones by
-  30-40 %, and the cause is not yet known. The published model is what the measurements on this
-  page describe, so download it rather than rebuilding. See `notes/STATE.md`.
+  hardware stops cooperating. Speed fails independently: exact 78k is projected at 15-18 tok/s.
+* **The Neural Engine's own arithmetic is the largest error source.** The same fp16 layer is
+  0.49 % from the official model on the CPU and 5.12 % on the ANE. See Fidelity above.
 * **Speech out works over HTTP too**, not only through the CLI: POST /v1/audio/speech
   answered **200, audio/wav, 49,964 bytes** with a valid RIFF header (it used to answer 501 --
   that was the endpoint refusing to load the codec while the server already held all 26
