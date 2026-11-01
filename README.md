@@ -53,8 +53,7 @@ Two changes got it from 16.3 to 24.5 tok/s, both from measurement rather than as
 of 64,000 so both matmuls land on the engine instead of the CPU (21.1 -> 24.5, the whole
 head cost 11.4 ms in place and 3.0 ms split).
 
-Long contexts are slower: the full-attention programs read a 28,672-row tile
-whether or not it is masked, so expect ~11-15 tok/s once the cache is full.
+Speed does not fall with context on the current build, and `Fidelity` below has the measurements.
 
 ## Fidelity against the official model
 
@@ -69,6 +68,19 @@ The official implementation (fp32, whole sequence) and the Core ML programs were
 | logit cosine | 0.9983 | **1.0000** |
 | decode | 28.5-32.0 tok/s | **29.3-29.8 tok/s** |
 | size | 2.0 GB | 2.4 GB |
+
+At long context, one run on the published build to 28,500 tokens:
+
+| position | decode |
+|---|---|
+| 1,040 | 29.9 tok/s |
+| 8,040 | 28.8 tok/s |
+| 16,040 | 29.7 tok/s |
+| 28,040 | 31.1 tok/s |
+
+It took 14.6 minutes and recalled a code stated at the very start of the prompt. Against the official
+model at positions 4,000-4,039, top-1 agreement is 100 %, top-5 overlap 4.85 of 5, and mean KL
+0.0046. Fidelity past that position has not been measured.
 
 The build code is exact: its PyTorch layers match the official ones to 0.01 % or better. Most of
 the published model's error came from the engine's arithmetic, in two places that `build_model.py`

@@ -59,8 +59,10 @@ attended exactly. A request needing more is refused with `400 context_exceeded`.
 
 ## Measured
 
-* **about 30 tok/s** decode at short context (29.3-29.8 measured over 88 tokens), falling as the
-  cache fills. The ~11-15 tok/s long-context figure is from the earlier 6-bit build
+* **about 30 tok/s** decode, flat across the whole context: 29.9 at 1,000 tokens, 29.7 at 16,000,
+  31.1 at 28,000
+* prefill at the same rate one token at a time, so a 28,500-token prompt reads in about 14.5 minutes
+* at 28,500 tokens it recalled a code stated at the very start of the prompt
 * against the official model on a 241-token prompt mixing English, Romanian, code and arithmetic:
   top-1 agreement **96.3 %**, top-5 overlap 4.83 of 5, mean KL **0.0036**, logit cosine 1.0000
   (the earlier 6-bit build here measured 81.7 % and 0.2034)
@@ -78,12 +80,12 @@ in the code repository.
 * **Exact attention at 78k is not reachable at speed on this hardware.** The arithmetic does
   not close: exact 78k needs
   ~109 GFLOPS for attention alone at 20 tok/s, and the best measured ANE tile delivers 92.
-* **Long contexts have not been re-measured on this build.** The longest run with the fixes is
-  337 tokens.
+* **Fidelity against the official model is measured up to position 4,039** (top-1 100 % and mean
+  KL 0.0046 over positions 4,000-4,039), not across the whole context.
 * **Speech quality has only been compared numerically** (waveform correlation 0.996 against the
   PyTorch codec on random codes).
 * **Multimodal limits:** audio input over 30 s and speech over 10.2 s fall back to PyTorch, which
-  needs the source checkpoint's towers. PyTorch is still imported by the runtime.
+  needs `towers.safetensors` (0.88 GB, also in this repository; skip it otherwise). PyTorch is still imported by the runtime.
 * **Audio output works.** The depth decoder, sampler and codec are numerically exact
   (rms and spectrum checked against the reference decode over 24 frames); the loop runs on
   the engine and produces speech-level audio.

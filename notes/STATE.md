@@ -1202,3 +1202,19 @@ so speech no longer reads the tower or codec checkpoints. Clips over 128 frames 
 to torch for the codec. Text, vision, audio in and speech out now all run on the engine; PyTorch is
 still imported for host-side arithmetic, so it is not yet removed as a dependency. Speech quality
 has only been compared numerically.
+
+## Long context on the published build, and a claim retracted
+
+One run to 28,500 tokens (`probes/reference/long_context.py`), with other work on the machine:
+decode 29.9, 30.2, 29.9, 28.8, 30.1, 29.7, 29.9, 30.1 and 31.1 tok/s at positions 1,040 to 28,040.
+That took 877 s and answered OMEGA-99, a code stated at the very start of the prompt.
+
+**Earlier notes said speed falls to ~11-15 tok/s as the cache fills. It does not, on this build.**
+That figure was never re-measured after the LUT6 and LM head work, and it should not be repeated.
+
+Against the official model at positions 4,000-4,039: top-1 100 %, top-5 4.85 of 5, mean KL 0.0046,
+median 0.0019, logit cosine 0.99994. Fidelity beyond 4,039 is not measured.
+
+A fresh clone and fresh Hugging Face download, with no tower or source weights, passed the smoke
+test, except that its audio input check did not run because the test clip is not in the repository.
+
