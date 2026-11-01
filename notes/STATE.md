@@ -1176,3 +1176,18 @@ End to end, against the official model, 241-token mixed prompt:
 On the 36-token prompt the fixed build agrees on 100 % of top-1 tokens, mean KL 0.0022. It passes
 `tools/smoke_test.py`. Long contexts were not re-measured; the longest run here is 337 tokens.
 
+## Vision and audio input on the engine
+
+`tools/build_vision.py` and `tools/build_audio.py` each write one stateless Core ML program, fp16,
+with the same engine fixes. `lfm3_vision_api.py` and `lfm3_audio_api.py` use them when the build
+holds `vision.mlpackage` and `audio_encoder.mlpackage`, and fall back to torch otherwise.
+
+| program | input | on the ANE vs the torch tower | time | size |
+|---|---|---|---|---|
+| vision | fixed 224 x 224 | cosine 0.999 on a photo, 41 % error down to 4.2 % | 13-22 ms | 362 MB |
+| audio encoder | mel padded to 30 s | cosine 0.9996, 2.7 % error, on 2 s of speech | 24 ms | 221 MB |
+
+Audio over 30 s falls back to torch. `tools/vision_check.py` and `tools/audio_check.py` measure
+these. The vision photo is a single sample, and flat colour inputs are worse (cosine 0.985).
+Speech output (depth decoder and codec) still runs in torch on the CPU.
+
