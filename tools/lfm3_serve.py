@@ -250,8 +250,7 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='LFM3-Omni-2B on the Apple Neural Engine.')
     parser.add_argument('--mode', default=os.environ.get('LFM3_MODE', modes.DEFAULT_MODE),
-                        help='28k (exact, every token resident) or 78k (ring cache, forgets '
-                             'past 28,672 tokens)')
+                        help='28k (exact, every token resident), the only mode')
     parser.add_argument('--port', type=int, default=int(os.environ.get('LFM3_PORT', '8010')))
     arguments = parser.parse_args()
     chosen = modes.resolve(arguments.mode)
